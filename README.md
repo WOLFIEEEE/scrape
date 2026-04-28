@@ -42,8 +42,14 @@ Every URL starts at the **cheapest tier** (~50ms HTTP) and only escalates when b
 
 ### Extraction
 - Per-site CSS selectors (~100× cheaper than LLM for known schemas)
-- Claude-driven schema extraction with prompt caching (~90% input-token savings)
+- **Pluggable LLM backend** — Anthropic Claude (paid, with prompt caching) **or** local **Ollama** (free, self-hosted) via the same `extract()` interface
 - Confidence scoring on every row
+
+### Self-hosted alternatives to paid services
+- **Ollama** (free, in-container) replaces Anthropic — drop in `qwen2.5:7b`, `llama3.1:8b`, `phi3.5:3.8b`, or `numind/nuextract-2:7b`
+- **FlareSolverr** (free, in-container) replaces paid CAPTCHA / unblock services for Cloudflare Managed Challenge as a Tier 3 fallback
+- Set `LLM_BACKEND=ollama` and `UNBLOCK_PROVIDER=flaresolverr` to run with **zero paid third-party services**
+- Both ship in [`ops/compose.yml`](ops/compose.yml) under the `selfhost` profile: `docker compose -f ops/compose.yml --profile selfhost up`
 
 ### Web app
 - Multi-tenant FastAPI + Next.js 15 dashboard
@@ -190,10 +196,18 @@ PROXY_STICKY_SESSION_MINUTES=10
 # CAPTCHA solver
 CAPSOLVER_API_KEY=
 
-# LLM extraction
-ANTHROPIC_API_KEY=
+# LLM extraction — pluggable backend
+LLM_BACKEND=none                   # none | anthropic | ollama | auto
+ANTHROPIC_API_KEY=                 # only for backend=anthropic | auto
 ANTHROPIC_MODEL_FAST=claude-haiku-4-5-20251001
 ANTHROPIC_MODEL_SMART=claude-sonnet-4-6
+LLM_OLLAMA_URL=http://localhost:11434   # backend=ollama
+LLM_OLLAMA_MODEL=qwen2.5:7b
+
+# Tier-3 unblock fallback — open-source FlareSolverr or paid managed
+UNBLOCK_PROVIDER=none              # none | flaresolverr
+UNBLOCK_ENDPOINT=http://localhost:8191
+UNBLOCK_TIMEOUT_S=60
 
 # Crawler tuning
 CRAWL_MAX_CONCURRENCY=16
@@ -224,10 +238,17 @@ scrape-api
 ### Docker Compose
 
 ```bash
+# Core stack only — API, web, Redis
 docker compose -f ops/compose.yml up -d
+
+# + self-hosted Ollama (LLM extraction) and FlareSolverr (Tier-3 unblock)
+docker compose -f ops/compose.yml --profile selfhost up -d
+
+# + observability stack (Prometheus + Grafana)
+docker compose -f ops/compose.yml --profile observability up -d
 ```
 
-Brings up the API, the Next.js web app, Redis, Prometheus, and Grafana. Set `SCRAPE_JWT_SECRET` in your environment first.
+Set `SCRAPE_JWT_SECRET` first. With `--profile selfhost`, the system runs end-to-end with **zero paid third-party services** — the API talks to in-container Ollama for LLM extraction and to FlareSolverr for Tier-3 unblocks.
 
 ### Kubernetes
 

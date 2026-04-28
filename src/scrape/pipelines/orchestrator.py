@@ -23,7 +23,8 @@ from scrape.core.rate_limiter import HostRateLimiter
 from scrape.core.robots import RobotsCache
 from scrape.core.session_store import SessionStore, host_key
 from scrape.core.tier_router import TierRouter
-from scrape.extractors.llm_schema import LLMExtractor
+from scrape.core.unblock import build_unblock_provider
+from scrape.extractors.llm_schema import SchemaExtractor, build_extractor
 from scrape.extractors.selectors import find_extractor
 from scrape.logging import get_logger
 from scrape.models import ExtractedRecord, FetchRequest, FetchResult, Tier
@@ -68,21 +69,30 @@ class Orchestrator:
             )
         elif use_browser:
             log.warning("browser.disabled", reason="camoufox_not_installed")
+        self._unblock = build_unblock_provider(
+            provider=self._settings.unblock.provider,
+            endpoint=self._settings.unblock.endpoint,
+            timeout_s=self._settings.unblock.timeout_s,
+        )
+        if self._unblock is not None:
+            log.info("unblock.enabled", provider=self._unblock.name)
         self._router = TierRouter(
             proxy_manager=self._proxies,
             session_store=self._sessions,
             captcha_solver=self._captcha,
             browser_pool=self._browser_pool,
-            unblock_provider=None,
+            unblock_provider=self._unblock,
             timeout_s=self._settings.crawler.request_timeout_s,
         )
         self._limiter = HostRateLimiter(
             per_host_concurrency=self._settings.crawler.per_host_concurrency,
             min_delay_ms=self._settings.crawler.per_host_min_delay_ms,
         )
-        self._llm: LLMExtractor | None = None
-        if use_llm and self._settings.llm.api_key:
-            self._llm = LLMExtractor()
+        self._llm: SchemaExtractor | None = None
+        if use_llm:
+            self._llm = build_extractor()
+            if self._llm is not None:
+                log.info("llm.enabled", backend=self._llm.backend)
         self._robots: RobotsCache | None = (
             RobotsCache() if self._settings.crawler.respect_robots else None
         )

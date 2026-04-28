@@ -12,8 +12,12 @@ services:
       SCRAPE_JWT_SECRET: ${SCRAPE_JWT_SECRET:-dev-only-change-me-please}
       STORAGE_SQLITE_PATH: /data/scrape.db
       STORAGE_RAW_HTML_DIR: /data/raw
+      # When the optional services below are running, point the orchestrator at them.
+      LLM_OLLAMA_URL: ${LLM_OLLAMA_URL:-http://ollama:11434}
+      UNBLOCK_ENDPOINT: ${UNBLOCK_ENDPOINT:-http://flaresolverr:8191}
     volumes:
       - scrape_data:/data
+    depends_on: [redis]
     ports: ["8000:8000"]
 
   web:
@@ -31,8 +35,38 @@ services:
     volumes: ["redis_data:/data"]
     command: redis-server --appendonly yes
 
+  # ---------------------------------------------------------------------------
+  # Optional self-hosted services — enable with `docker compose --profile selfhost up`.
+  # `ollama` replaces the Anthropic API for LLM-driven schema extraction.
+  # `flaresolverr` is the Tier-3 unblock fallback (open-source Cloudflare bypass).
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["selfhost"]
+    ports: ["11434:11434"]
+    volumes: ["ollama_models:/root/.ollama"]
+    # Pull a default model on first boot. Override with OLLAMA_DEFAULT_MODEL.
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "ollama serve &
+       sleep 4
+       ollama pull ${OLLAMA_DEFAULT_MODEL:-qwen2.5:7b}
+       wait"
+
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    profiles: ["selfhost"]
+    ports: ["8191:8191"]
+    environment:
+      LOG_LEVEL: info
+      TZ: UTC
+
+  # ---------------------------------------------------------------------------
+  # Observability
+  # ---------------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:latest
+    profiles: ["observability"]
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     ports: ["9091:9090"]
@@ -40,6 +74,7 @@ services:
 
   grafana:
     image: grafana/grafana:latest
+    profiles: ["observability"]
     ports: ["3001:3000"]
     environment:
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -50,4 +85,5 @@ services:
 volumes:
   scrape_data: {}
   redis_data: {}
+  ollama_models: {}
   grafana_data: {}

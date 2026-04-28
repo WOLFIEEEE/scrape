@@ -1,19 +1,20 @@
-"""Schema-driven LLM extractor with prompt caching.
+"""Schema-driven LLM extractor.
 
-Pattern:
-  1. HTML -> Markdown (cheap, deterministic)
-  2. Send Markdown + JSON schema to Claude with a *cacheable* system prompt
-  3. Parse structured JSON output
+Two backends behind one interface:
+  - Anthropic Claude (paid, hosted) — supports prompt caching for ~90% input
+    token savings across a crawl job.
+  - Ollama (free, self-hosted) — runs Qwen / Llama / NuExtract / etc. locally
+    with a forced JSON output mode. Same `extract()` signature.
 
-Why caching: the system prompt + schema are stable per crawl job — caching
-slashes per-page cost ~90% with prompt caching enabled.
+Backend selection is config-driven via `LLM_BACKEND=anthropic|ollama`. Either
+is opt-in: if no backend is configured the orchestrator skips LLM extraction.
 """
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Protocol
 
-from anthropic import AsyncAnthropic
+import httpx
 
 from scrape.config import get_settings
 from scrape.extractors.markdown import html_to_markdown
@@ -36,14 +37,37 @@ Rules:
 """
 
 
-class LLMExtractor:
+# ----------------------------------------------------------------------------
+# Public protocol
+# ----------------------------------------------------------------------------
+
+class SchemaExtractor(Protocol):
+    backend: str
+
+    async def extract(
+        self,
+        html: str | bytes,
+        url: str,
+        schema_name: str,
+        schema: dict[str, Any],
+    ) -> ExtractedRecord: ...
+
+
+# ----------------------------------------------------------------------------
+# Anthropic implementation
+# ----------------------------------------------------------------------------
+
+class AnthropicExtractor:
+    backend = "anthropic"
+
     def __init__(self, api_key: str | None = None, model: str | None = None):
+        from anthropic import AsyncAnthropic  # local import: optional dep
         cfg = get_settings()
         key = api_key or cfg.llm.api_key
         if not key:
             raise RuntimeError(
                 "Anthropic API key not configured (ANTHROPIC_API_KEY). "
-                "LLM extraction is disabled until set."
+                "Set LLM_BACKEND=ollama for self-hosted extraction."
             )
         self._client = AsyncAnthropic(api_key=key)
         self._model = model or cfg.llm.model_fast
@@ -56,21 +80,14 @@ class LLMExtractor:
         schema: dict[str, Any],
     ) -> ExtractedRecord:
         markdown = html_to_markdown(html, base_url=url)
-        # Trim if huge — model context is finite and signal-to-noise drops
         if len(markdown) > 60_000:
             markdown = markdown[:60_000]
 
-        # System prompt + schema marked cacheable: stable across pages of the
-        # same crawl job. Per-message content is the only thing we pay for fully.
         msg = await self._client.messages.create(
             model=self._model,
             max_tokens=2048,
             system=[
-                {
-                    "type": "text",
-                    "text": _SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                },
+                {"type": "text", "text": _SYSTEM_PROMPT, "cache_control": {"type": "ephemeral"}},
                 {
                     "type": "text",
                     "text": f"Schema name: {schema_name}\nJSON Schema:\n{json.dumps(schema, indent=2)}",
@@ -83,36 +100,139 @@ class LLMExtractor:
                     "content": [
                         {"type": "text", "text": f"URL: {url}"},
                         {"type": "text", "text": f"Markdown:\n{markdown}"},
-                        {
-                            "type": "text",
-                            "text": "Return ONLY the JSON object, no prose, no markdown fences.",
-                        },
+                        {"type": "text", "text": "Return ONLY the JSON object, no prose, no fences."},
                     ],
                 }
             ],
         )
-
         text = "".join(b.text for b in msg.content if hasattr(b, "text")).strip()
-        # Strip optional ```json fences if model wraps despite instructions
-        if text.startswith("```"):
-            text = text.strip("`")
-            if text.startswith("json"):
-                text = text[4:]
-            text = text.strip()
-        try:
-            data = json.loads(text)
-        except json.JSONDecodeError as e:
-            log.warning("llm.parse_failed", url=url, error=str(e), preview=text[:200])
-            data = {"_raw": text, "_parse_error": str(e)}
+        data = _parse_json_blob(text, url)
 
-        # Confidence proxy from cache hit ratio (cached calls ≈ stable schema, less variance)
+        # Confidence proxy — high cache hit ratio means stable schema.
         cached = getattr(msg.usage, "cache_read_input_tokens", 0) or 0
         total_in = msg.usage.input_tokens or 1
         confidence = round(min(1.0, 0.6 + (cached / total_in) * 0.4), 3)
+        return ExtractedRecord(url=url, schema_name=schema_name, data=data, confidence=confidence)
 
-        return ExtractedRecord(
-            url=url,
-            schema_name=schema_name,
-            data=data,
-            confidence=confidence,
+
+# ----------------------------------------------------------------------------
+# Ollama implementation (self-hosted)
+# ----------------------------------------------------------------------------
+
+class OllamaExtractor:
+    """Talks to a local Ollama server (`ollama serve`) over HTTP.
+
+    Uses Ollama's JSON output mode (`format: "json"`) which constrains the
+    model to emit valid JSON. Works with any JSON-capable model:
+    `qwen2.5:7b`, `llama3.1:8b`, `phi3.5:3.8b`, `numind/nuextract-2:7b`, etc.
+    """
+
+    backend = "ollama"
+
+    def __init__(self, base_url: str | None = None, model: str | None = None, timeout_s: int = 120):
+        cfg = get_settings()
+        self._base = (base_url or cfg.llm.ollama_url).rstrip("/")
+        self._model = model or cfg.llm.ollama_model
+        self._timeout = timeout_s
+
+    async def extract(
+        self,
+        html: str | bytes,
+        url: str,
+        schema_name: str,
+        schema: dict[str, Any],
+    ) -> ExtractedRecord:
+        markdown = html_to_markdown(html, base_url=url)
+        # Local models have shorter context; trim more aggressively
+        if len(markdown) > 24_000:
+            markdown = markdown[:24_000]
+
+        user_prompt = (
+            f"URL: {url}\n"
+            f"Schema name: {schema_name}\n"
+            f"JSON Schema:\n{json.dumps(schema, indent=2)}\n\n"
+            f"Page (Markdown):\n{markdown}\n\n"
+            "Return ONLY the JSON object."
         )
+
+        payload = {
+            "model": self._model,
+            "stream": False,
+            "format": "json",
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            "options": {"temperature": 0.1, "num_ctx": 32_000},
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(f"{self._base}/api/chat", json=payload)
+                resp.raise_for_status()
+                body = resp.json()
+        except httpx.HTTPError as e:
+            log.warning("ollama.http_error", url=url, error=str(e))
+            return ExtractedRecord(
+                url=url, schema_name=schema_name,
+                data={"_error": f"ollama: {e}"}, confidence=0.0,
+            )
+
+        text = (body.get("message") or {}).get("content", "").strip()
+        data = _parse_json_blob(text, url)
+
+        # Crude confidence — count non-null fields vs schema 'required'
+        required = (schema or {}).get("required") or []
+        if required and isinstance(data, dict):
+            present = sum(1 for k in required if data.get(k) is not None)
+            confidence = round(present / max(len(required), 1), 3)
+        else:
+            confidence = 0.7
+
+        return ExtractedRecord(url=url, schema_name=schema_name, data=data, confidence=confidence)
+
+
+# ----------------------------------------------------------------------------
+# Factory
+# ----------------------------------------------------------------------------
+
+def build_extractor() -> SchemaExtractor | None:
+    """Return a configured extractor, or None when no backend is set up."""
+    cfg = get_settings()
+    backend = cfg.llm.backend.lower()
+
+    if backend == "ollama":
+        return OllamaExtractor()
+    if backend == "anthropic":
+        if not cfg.llm.api_key:
+            log.warning("llm.skipped", reason="anthropic_key_missing")
+            return None
+        return AnthropicExtractor()
+    if backend == "auto":
+        if cfg.llm.api_key:
+            return AnthropicExtractor()
+        # Fall through to Ollama only if it's reachable
+        return OllamaExtractor()
+    return None
+
+
+# Backwards-compat alias for older callers.
+LLMExtractor = AnthropicExtractor
+
+
+# ----------------------------------------------------------------------------
+# JSON parsing helper
+# ----------------------------------------------------------------------------
+
+def _parse_json_blob(text: str, url: str) -> dict[str, Any]:
+    """Strip ```json fences, parse, fall back gracefully on bad output."""
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        log.warning("llm.parse_failed", url=url, error=str(e), preview=text[:200])
+        return {"_raw": text, "_parse_error": str(e)}

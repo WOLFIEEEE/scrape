@@ -30,11 +30,35 @@ class CaptchaConfig(BaseSettings):
 
 
 class LLMConfig(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="ANTHROPIC_", env_file=".env", extra="ignore")
+    """Schema-extraction LLM config — supports Anthropic Claude or self-hosted Ollama.
 
-    api_key: str = ""
-    model_fast: str = "claude-haiku-4-5-20251001"
-    model_smart: str = "claude-sonnet-4-6"
+    Backend selection:
+      LLM_BACKEND=anthropic   → use Claude (requires ANTHROPIC_API_KEY)
+      LLM_BACKEND=ollama      → use a local Ollama server
+      LLM_BACKEND=auto        → Anthropic if key set, else Ollama
+      LLM_BACKEND=none (default) → LLM extraction disabled
+    """
+    model_config = SettingsConfigDict(env_prefix="LLM_", env_file=".env", extra="ignore")
+
+    backend: Literal["none", "anthropic", "ollama", "auto"] = "none"
+
+    # --- Anthropic ---
+    api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
+    model_fast: str = Field(default="claude-haiku-4-5-20251001", validation_alias="ANTHROPIC_MODEL_FAST")
+    model_smart: str = Field(default="claude-sonnet-4-6", validation_alias="ANTHROPIC_MODEL_SMART")
+
+    # --- Ollama (self-hosted) ---
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:7b"
+
+
+class UnblockConfig(BaseSettings):
+    """Tier-3 unblock provider — FlareSolverr (self-hosted) or future managed adapters."""
+    model_config = SettingsConfigDict(env_prefix="UNBLOCK_", env_file=".env", extra="ignore")
+
+    provider: Literal["none", "flaresolverr"] = "none"
+    endpoint: str = "http://localhost:8191"
+    timeout_s: int = 60
 
 
 class StorageConfig(BaseSettings):
@@ -84,6 +108,7 @@ class Settings(BaseSettings):
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
     captcha: CaptchaConfig = Field(default_factory=CaptchaConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    unblock: UnblockConfig = Field(default_factory=UnblockConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     crawler: CrawlerConfig = Field(default_factory=CrawlerConfig)
