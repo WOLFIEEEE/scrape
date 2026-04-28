@@ -1,0 +1,31 @@
+# Example JSON schema for LLM-driven product extraction.
+# Pass to the CLI:
+#   scrape crawl https://shop.example/p/123 \
+#     --llm --schema examples/schema_product.yaml --schema-name product
+
+type: object
+properties:
+  title:
+    type: string
+    description: "Product display name"
+  price:
+    type: number
+    description: "Numeric price; strip currency symbols and thousands separators"
+  currency:
+    type: string
+    description: "ISO 4217 currency code, e.g. USD, EUR, GBP"
+  in_stock:
+    type: boolean
+  rating:
+    type: number
+    description: "0.0 to 5.0; null if no reviews"
+  review_count:
+    type: integer
+  brand:
+    type: [string, "null"]
+  description:
+    type: [string, "null"]
+  image_urls:
+    type: array
+    items: { type: string }
+required: [title, price, currency, in_stock]

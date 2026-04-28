@@ -1,0 +1,300 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   EXCAVATION — design tokens.
+   Warm off-black + bone, single hazard accent. Dark by default.
+   ============================================================ */
+
+@layer base {
+  :root {
+    /* Excavation palette */
+    --paper:  44 33% 93%;   /* #f4ede4 bone */
+    --ink:    24 20% 4%;    /* #0a0908 warm off-black */
+    --rust:   16 80% 43%;   /* #c14a1a hazard marker */
+    --lichen: 80 100% 54%;  /* #a3ff12 status / live */
+    --dust:   24 12% 20%;   /* #3a3530 hairlines on dark */
+    --clay:   24 12% 14%;   /* #2a2622 secondary surface on dark */
+    --paper-2: 44 25% 88%;
+
+    /* DARK = default */
+    --bg:         var(--ink);
+    --bg-2:       var(--clay);
+    --fg:         var(--paper);
+    --fg-muted:   44 16% 65%;
+    --line:       var(--dust);
+    --accent:     var(--rust);
+    --accent-fg:  var(--paper);
+
+    /* Type rhythm */
+    --leading-tight: 0.95;
+    --tracking-display: 0em;
+    --tracking-eyebrow: 0em;
+  }
+
+  .light {
+    --bg:        var(--paper);
+    --bg-2:      var(--paper-2);
+    --fg:        var(--ink);
+    --fg-muted:  24 18% 32%;
+    --line:      24 12% 78%;
+  }
+
+  * { border-color: hsl(var(--line)); }
+
+  html { scroll-behavior: smooth; background: hsl(var(--bg)); }
+
+  body {
+    background: hsl(var(--bg));
+    color: hsl(var(--fg));
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-feature-settings: "ss01" 1, "calt" 0, "tnum" 1;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  a { text-decoration: none; color: inherit; }
+}
+
+/* ============================================================
+   COLOR UTILITIES
+   ============================================================ */
+@layer utilities {
+  .bg-paper   { background-color: hsl(var(--paper)); }
+  .bg-ink     { background-color: hsl(var(--ink)); }
+  .bg-rust    { background-color: hsl(var(--rust)); }
+  .bg-lichen  { background-color: hsl(var(--lichen)); }
+  .bg-clay    { background-color: hsl(var(--clay)); }
+
+  .text-paper  { color: hsl(var(--paper)); }
+  .text-ink    { color: hsl(var(--ink)); }
+  .text-rust   { color: hsl(var(--rust)); }
+  .text-lichen { color: hsl(var(--lichen)); }
+  .text-fg     { color: hsl(var(--fg)); }
+  .text-muted  { color: hsl(var(--fg-muted)); }
+
+  .border-line  { border-color: hsl(var(--line)); }
+  .border-rust  { border-color: hsl(var(--rust)); }
+  .border-paper { border-color: hsl(var(--paper)); }
+  .border-ink   { border-color: hsl(var(--ink)); }
+}
+
+/* ============================================================
+   TYPOGRAPHY
+   ============================================================ */
+@layer utilities {
+  .display {
+    font-family: var(--font-display), serif;
+    font-style: normal;
+    font-weight: 500;
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-display);
+    /* Variable axes: large optical size + soft curves at display */
+    font-variation-settings: "opsz" 144, "SOFT" 100, "wght" 500;
+  }
+  /* Italic accent variant — used sparingly for the rust word */
+  .display-it {
+    font-family: var(--font-display), serif;
+    font-style: italic;
+    font-weight: 500;
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-display);
+    font-variation-settings: "opsz" 144, "SOFT" 100, "wght" 500;
+  }
+  .display-up {
+    font-family: var(--font-display), serif;
+    font-style: normal;
+    font-weight: 500;
+    line-height: var(--leading-tight);
+    letter-spacing: var(--tracking-display);
+    font-variation-settings: "opsz" 72, "SOFT" 50, "wght" 500;
+  }
+  .eyebrow {
+    font-family: var(--font-mono), monospace;
+    text-transform: uppercase;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: var(--tracking-eyebrow);
+    color: hsl(var(--fg-muted));
+  }
+  .small-caps {
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: var(--tracking-eyebrow);
+  }
+  .num { font-variant-numeric: tabular-nums; }
+}
+
+/* ============================================================
+   ARCHAEOLOGICAL SIGNATURES
+   ============================================================ */
+@layer components {
+  /* Survey-marker section header: ─── STRATUM 03 ─── */
+  .stratum-rule {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 4rem 0 2rem;
+  }
+  .stratum-rule::before, .stratum-rule::after {
+    content: "";
+    flex: 1;
+    height: 1px;
+    background: hsl(var(--line));
+  }
+  .stratum-rule__label {
+    font-family: var(--font-mono), monospace;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: var(--tracking-eyebrow);
+    color: hsl(var(--fg-muted));
+    white-space: nowrap;
+  }
+
+  /* Bracketed badge: [ STRATUM 1 ] */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-family: var(--font-mono), monospace;
+    font-size: 10px;
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid hsl(var(--line));
+    background: transparent;
+    color: hsl(var(--fg-muted));
+  }
+  .tag::before { content: "["; opacity: 0.6; padding-right: 2px; }
+  .tag::after  { content: "]"; opacity: 0.6; padding-left: 2px; }
+  .tag-rust { color: hsl(var(--rust)); border-color: hsl(var(--rust)); }
+  .tag-lichen { color: hsl(var(--lichen)); border-color: hsl(var(--lichen)); }
+
+  /* Crosshair link affordance */
+  .x-link {
+    position: relative;
+    color: hsl(var(--fg));
+    transition: color 120ms;
+  }
+  .x-link::before {
+    content: "+ ";
+    color: hsl(var(--rust));
+    opacity: 0;
+    transition: opacity 120ms;
+  }
+  .x-link:hover { color: hsl(var(--rust)); }
+  .x-link:hover::before { opacity: 1; }
+  .x-link:focus-visible {
+    outline: 1px solid hsl(var(--rust));
+    outline-offset: 3px;
+  }
+  .x-link:focus-visible::before { opacity: 1; }
+
+  /* Code panel */
+  .panel {
+    border: 1px solid hsl(var(--line));
+    background: hsl(var(--bg-2));
+  }
+  .panel-header {
+    border-bottom: 1px solid hsl(var(--line));
+    padding: 0.5rem 1rem;
+    font-family: var(--font-mono), monospace;
+    font-size: 10px;
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    color: hsl(var(--fg-muted));
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  /* Animated dotted leader (loading) */
+  @keyframes excavate {
+    0%, 100% { background-position: 0 0; opacity: 0.3; }
+    50% { opacity: 1; }
+  }
+  .skeleton {
+    background-image: linear-gradient(90deg, transparent 0, hsl(var(--line)) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: excavate 1.6s linear infinite;
+    height: 1em;
+  }
+
+  /* Survey grid backdrop */
+  .dig-grid {
+    background-image:
+      linear-gradient(hsl(var(--line) / 0.4) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--line) / 0.4) 1px, transparent 1px);
+    background-size: 80px 80px;
+    background-position: -1px -1px;
+  }
+  .dig-fade {
+    mask-image: radial-gradient(ellipse 60% 50% at 50% 50%, black 30%, transparent 90%);
+    -webkit-mask-image: radial-gradient(ellipse 60% 50% at 50% 50%, black 30%, transparent 90%);
+  }
+
+  /* Marquee for logo strip */
+  @keyframes marquee {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .animate-marquee { animation: marquee 40s linear infinite; }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .animate-pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================
+   PROSE
+   ============================================================ */
+.prose-doc { color: hsl(var(--fg)); font-size: 15px; line-height: 1.75; }
+.prose-doc p { color: hsl(var(--fg)); margin-bottom: 1em; }
+.prose-doc h2 {
+  font-family: var(--font-display), serif;
+  font-style: normal;
+  font-weight: 500;
+  font-size: 2rem;
+  line-height: 1.1;
+  margin: 3rem 0 1rem;
+  color: hsl(var(--fg));
+  font-variation-settings: "opsz" 72, "SOFT" 50, "wght" 500;
+}
+.prose-doc h3 {
+  font-family: var(--font-mono), monospace;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+  font-size: 12px;
+  margin: 2rem 0 0.5rem;
+  color: hsl(var(--fg-muted));
+}
+.prose-doc ul, .prose-doc ol { padding-left: 1.5rem; margin-bottom: 1rem; }
+.prose-doc ul { list-style: none; padding-left: 0; }
+.prose-doc ul li::before { content: "→ "; color: hsl(var(--rust)); }
+.prose-doc ol { list-style: decimal; }
+.prose-doc a { color: hsl(var(--rust)); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 4px; }
+.prose-doc strong { color: hsl(var(--fg)); font-weight: 600; }
+.prose-doc code:not(pre code) {
+  font-family: var(--font-mono), monospace;
+  background: hsl(var(--bg-2));
+  border: 1px solid hsl(var(--line));
+  padding: 0 0.35em;
+  font-size: 0.9em;
+}
+.prose-doc table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 13px; }
+.prose-doc th { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid hsl(var(--fg)); text-transform: uppercase; letter-spacing: var(--tracking-eyebrow); font-size: 11px; color: hsl(var(--fg-muted)); font-weight: 500; }
+.prose-doc td { padding: 0.5rem 0.75rem; border-bottom: 1px solid hsl(var(--line)); color: hsl(var(--fg)); }
+.prose-doc blockquote { border-left: 2px solid hsl(var(--rust)); padding-left: 1rem; margin: 1rem 0; color: hsl(var(--fg-muted)); font-style: italic; }
