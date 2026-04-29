@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from enum import IntEnum, StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -28,6 +28,9 @@ class BlockReason(StrEnum):
     FORBIDDEN_HOST = "forbidden_host"
 
 
+CaptchaKindLiteral = Literal["turnstile", "recaptcha_v3", "hcaptcha"]
+
+
 class FetchRequest(BaseModel):
     url: HttpUrl
     method: str = "GET"
@@ -36,6 +39,10 @@ class FetchRequest(BaseModel):
     cookies: dict[str, str] = Field(default_factory=dict)
     tier: Tier = Tier.HTTP
     max_tier: Tier = Tier.UNBLOCK
+    # When set, Tier 2 skips its (fragile) HTML-pattern auto-detect and asks
+    # the solver for this specific kind. Useful for jobs where the operator
+    # already knows the target ships hCaptcha and our regex would miss it.
+    captcha_hint: CaptchaKindLiteral | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -51,6 +58,13 @@ class FetchResult(BaseModel):
     fingerprint_id: str | None = None
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     block_reason: BlockReason = BlockReason.NONE
+    # Cost telemetry — written by the tier that incurred each cost.
+    # proxy_bytes counts request+response bytes that flowed through the rented
+    # proxy. Browser/unblock tiers that don't go through our proxy leave it 0.
+    proxy_bytes: int = 0
+    # solver_cost_usd is the per-fetch CAPTCHA spend (filled in by Tier 2).
+    # Kept as USD to match how solver providers price their tasks.
+    solver_cost_usd: float = 0.0
 
     @property
     def text(self) -> str:

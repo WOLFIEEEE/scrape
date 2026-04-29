@@ -35,7 +35,9 @@ CREATE TABLE IF NOT EXISTS fetches (
     elapsed_ms INTEGER NOT NULL,
     body_sha256 TEXT,
     body_size INTEGER,
-    fetched_at TEXT NOT NULL
+    fetched_at TEXT NOT NULL,
+    proxy_bytes INTEGER NOT NULL DEFAULT 0,
+    solver_cost_usd REAL NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_fetches_job_id ON fetches(job_id);
 CREATE INDEX IF NOT EXISTS idx_fetches_url ON fetches(url);
@@ -63,6 +65,9 @@ _MIGRATIONS = (
         "idx_extracted_job_id",
         "CREATE INDEX IF NOT EXISTS idx_extracted_job_id ON extracted(job_id)",
     ),
+    # Per-fetch cost telemetry: proxy bandwidth bytes + paid CAPTCHA solver USD
+    ("fetches.proxy_bytes", "ALTER TABLE fetches ADD COLUMN proxy_bytes INTEGER NOT NULL DEFAULT 0"),
+    ("fetches.solver_cost_usd", "ALTER TABLE fetches ADD COLUMN solver_cost_usd REAL NOT NULL DEFAULT 0"),
 )
 
 
@@ -110,8 +115,8 @@ class Storage:
             INSERT INTO fetches (
                 job_id, url, final_url, status, tier_used, block_reason,
                 proxy_used, fingerprint_id, elapsed_ms, body_sha256,
-                body_size, fetched_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                body_size, fetched_at, proxy_bytes, solver_cost_usd
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 job_id,
@@ -126,6 +131,8 @@ class Storage:
                 sha,
                 len(result.body),
                 result.fetched_at.isoformat(),
+                result.proxy_bytes,
+                result.solver_cost_usd,
             ),
         )
         await self._db.commit()
@@ -156,15 +163,22 @@ class Storage:
             """
             SELECT COUNT(*),
                    SUM(CASE WHEN status >= 200 AND status < 400 THEN 1 ELSE 0 END),
-                   AVG(elapsed_ms)
+                   AVG(elapsed_ms),
+                   COALESCE(SUM(proxy_bytes), 0),
+                   COALESCE(SUM(solver_cost_usd), 0)
             FROM fetches
             """
         )
         row = await cur.fetchone()
-        total, ok, avg_ms = row if row else (0, 0, 0)
+        if row:
+            total, ok, avg_ms, proxy_bytes, solver_usd = row
+        else:
+            total, ok, avg_ms, proxy_bytes, solver_usd = 0, 0, 0, 0, 0
         return {
             "total_fetches": int(total or 0),
             "successful": int(ok or 0),
             "success_rate": (ok / total) if total else 0.0,
             "avg_elapsed_ms": float(avg_ms or 0.0),
+            "proxy_bytes_total": int(proxy_bytes or 0),
+            "solver_cost_usd_total": float(solver_usd or 0.0),
         }

@@ -32,6 +32,27 @@ TIER_ESCALATIONS = Counter(
 QUEUE_SIZE = Gauge("scrape_queue_size", "Pending URLs in the queue")
 ACTIVE_BROWSERS = Gauge("scrape_active_browsers", "Open browser sessions")
 
+# Cost telemetry — operators rate-limit by these in production. Bytes are
+# what your residential proxy provider bills you for; USD is what your
+# CAPTCHA solver bills you for.
+PROXY_BYTES_TOTAL = Counter(
+    "scrape_proxy_bytes_total",
+    "Bytes that flowed through the rented proxy",
+    labelnames=("tier",),
+)
+SOLVER_COST_USD_TOTAL = Counter(
+    "scrape_solver_cost_usd_total",
+    "USD spent on paid CAPTCHA solver tasks",
+    labelnames=("kind",),
+)
+# Operator-actionable signal: when proxy auth itself is broken, repeated
+# 407s look identical to a temporarily flaky exit. Bumping a dedicated
+# counter lets the dashboard alert when the rate spikes globally.
+PROXY_AUTH_FAILURES = Counter(
+    "scrape_proxy_auth_failures_total",
+    "Proxy returned 407 / authentication failed",
+)
+
 
 def start_metrics_server(port: int) -> None:
     if port in _started_ports:

@@ -216,6 +216,15 @@ Every URL flows through this in one direction. The router only ever escalates up
 
 > **Why this matters:** a single headless-browser-only scraper costs roughly **60×** more in CPU + bandwidth than a TLS-impersonation HTTP fetcher. At 1M pages, the difference is **$280 vs $17,000**. Scrape spends Tier-0 dollars on the 80% of pages that don't need a browser.
 
+### Honest limits
+
+We've measured these in production-shape runs. They're worth flagging so the system meets your expectations rather than yours bending to fit it.
+
+- **Behaviorally-scored sites** (PerimeterX, advanced Akamai Bot Manager, Kasada) don't expose a CAPTCHA to solve — they grade your browser fingerprint and behavior. Tier 2 (CapSolver) cannot help; the free FlareSolverr Tier 3 also loses on these. Set `UNBLOCK_PROVIDER=brightdata` (or `scrapfly`) for those targets — the commercial unblockers run real browser farms purpose-built for this and cost ~$3 / 1,000 successes.
+- **`robots.txt` is honored by default** (`CRAWL_RESPECT_ROBOTS=true`). For targets like `reddit.com` whose robots disallows scraping, the orchestrator will **skip URLs**. You can opt out with `CRAWL_RESPECT_ROBOTS=false`, but that decision is yours to defend — Scrape is ethical-by-default by design, not by accident.
+- **Tier 1 takes 60–90 s per page** (cold browser + challenge solving + humanized behavior). Tier 3 is similar. Plan throughput accordingly: 30 concurrent browser fetches ≈ 30 successful pages per ~75 s.
+- **Tier 1 RAM:** each warm Camoufox ≈ 700–900 MB. Cap browsers per worker via `CRAWL_MAX_CONCURRENCY` (the pool sizes itself to ¼ of the concurrency cap).
+
 ---
 
 ## Configuration
@@ -250,9 +259,17 @@ Every setting is an environment variable. Defaults are sensible for local dev. C
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `UNBLOCK_PROVIDER`        | `none`           | `none` or `flaresolverr` |
-| `UNBLOCK_ENDPOINT`        | `http://flaresolverr:8191` | FlareSolverr URL |
+| `UNBLOCK_PROVIDER`        | `none`           | `none` · `flaresolverr` · `brightdata` · `scrapfly` |
+| `UNBLOCK_ENDPOINT`        | `http://flaresolverr:8191` | FlareSolverr URL (only for `flaresolverr`) |
 | `UNBLOCK_TIMEOUT_S`       | `60`             | Browser fetch timeout |
+| `BRIGHTDATA_API_KEY`      | —                | Required when `UNBLOCK_PROVIDER=brightdata` |
+| `BRIGHTDATA_ZONE`         | `web_unlocker1`  | Bright Data zone name |
+| `SCRAPFLY_API_KEY`        | —                | Required when `UNBLOCK_PROVIDER=scrapfly` |
+
+**Picking a Tier-3 provider:**
+- **`flaresolverr`** — free, self-hosted Docker container. Beats plain Cloudflare JS challenges. **Cannot beat behavioral-scoring vendors** (PerimeterX, advanced Akamai, Kasada) — they don't expose a challenge to solve, they grade your browser. For those, use a commercial unblocker.
+- **`brightdata`** — pay-per-success Web Unlocker (~$3 / 1,000 reqs). Beats CF / Akamai / PerimeterX / Kasada. Failed requests are not billed.
+- **`scrapfly`** — credits-based (~$0.001–$0.025 per request depending on level).
 
 ### Proxy provider
 
@@ -270,6 +287,17 @@ Every setting is an environment variable. Defaults are sensible for local dev. C
 |---|---|---|
 | `CAPSOLVER_API_KEY`       | —                | Required for Tier 2 token-injection solving |
 | `CAPSOLVER_TIMEOUT_S`     | `120`            | Max wait for a token |
+
+**Per-target override.** Tier 2's HTML-pattern detection misses some embeddings (hCaptcha in shadow DOM, lazy-loaded iframes). When you already know what a target ships, set `captcha_hint` on the job (`turnstile` · `recaptcha_v3` · `hcaptcha`) and we skip auto-detection.
+
+**Cost transparency.** Every fetch records `proxy_bytes` (residential bandwidth used) and `solver_cost_usd` (paid CAPTCHA spend) in storage and as Prometheus counters (`scrape_proxy_bytes_total` / `scrape_solver_cost_usd_total`). The Grafana dashboard shows the running totals so customers see what they're spending per tier.
+
+Typical costs at the time of writing:
+- Tier 0 (curl_cffi): ~50 KB–500 KB proxy bandwidth, ~$0.0001 each
+- Tier 1 (browser): ~1–10 MB proxy bandwidth, ~$0.002–$0.02 each, **60–90 s wall time**
+- Tier 2 (CAPTCHA): solver ~$0.001 (Turnstile) – $0.003 (reCAPTCHA), 3–10 s on top of Tier 1
+- Tier 3 (`flaresolverr`): no proxy bandwidth, **60–120 s wall time**, no $ cost
+- Tier 3 (`brightdata` / `scrapfly`): no proxy bandwidth, ~$0.003–$0.025 per success, 5–30 s
 
 ### Crawler tuning
 

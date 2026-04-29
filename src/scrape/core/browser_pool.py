@@ -222,6 +222,11 @@ class BrowserSession:
             status = response.status if response else 0
             headers = dict(response.headers) if response else {}
             final_url = page.url
+            # Approximate browser proxy traffic. Playwright doesn't expose the
+            # raw byte counter, so we use the rendered HTML as a floor; real
+            # traffic includes JS/CSS/image subresources and is typically 5-15x
+            # the HTML size. Multiplier is conservative.
+            proxy_bytes = int(len(body) * 6) if self._proxy_url else 0
             return FetchResult(
                 url=url,
                 final_url=final_url,
@@ -232,6 +237,7 @@ class BrowserSession:
                 tier_used=Tier.BROWSER,
                 proxy_used=self._proxy_url,
                 fingerprint_id=self._profile.name,
+                proxy_bytes=proxy_bytes,
             )
         except Exception as e:
             elapsed_ms = int((time.perf_counter() - start) * 1000)

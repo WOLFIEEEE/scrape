@@ -151,20 +151,43 @@ def build_provider(cfg: ProxyConfig) -> ProxyProvider:
     )
 
 
+class ProxyAuthBroken(RuntimeError):  # noqa: N818 - the rule asks for "Error" suffix; we keep this name because it reads naturally at call sites: `except ProxyAuthBroken: alert_operator()`. Renaming would only make telemetry worse.
+    """Raised when proxy auth has failed enough times that retrying is futile.
+
+    This is a *credentials* problem — wrong username/password, expired plan,
+    revoked key — not a transient network failure. The operator needs to
+    update PROXY_USERNAME/PROXY_PASSWORD; rotating sessions won't help.
+    """
+
+
 class ProxyManager:
     """Lease proxies, track health, recycle on block.
 
     The session_id is the caller's choice — typically a hash of (host, fingerprint)
     so the same logical "user" reuses the same exit IP for the sticky window.
+
+    Auth-failure circuit breaker:
+        Per-session cooldown handles transient failures (bad exit IPs, blocks).
+        But if the proxy ITSELF refuses our auth, no amount of session rotation
+        will fix it. We track 407s globally and surface ProxyAuthBroken once a
+        threshold is crossed, so the orchestrator can stop wasting work and
+        alert the operator instead of silently retrying.
     """
 
-    def __init__(self, provider: ProxyProvider, sticky_minutes: int = 10):
+    def __init__(
+        self,
+        provider: ProxyProvider,
+        sticky_minutes: int = 10,
+        auth_failure_threshold: int = 5,
+    ):
         self._provider = provider
         self._sticky_s = sticky_minutes * 60
         self._leases: dict[str, ProxyLease] = {}
         # session_id -> recent (ok, failed) timestamps for health
         self._history: dict[str, deque[tuple[float, bool]]] = defaultdict(lambda: deque(maxlen=20))
         self._cooldown_until: dict[str, float] = {}
+        self._auth_failures: int = 0
+        self._auth_threshold = max(1, auth_failure_threshold)
 
     def lease(self, session_id: str, country: str | None = None) -> ProxyLease:
         now = time.time()
@@ -199,3 +222,36 @@ class ProxyManager:
         if not hist:
             return 1.0
         return sum(1 for _, ok in hist if ok) / len(hist)
+
+    def report_auth_failure(self) -> None:
+        """Record a proxy auth (407) failure. Raises ProxyAuthBroken once
+        the threshold is crossed so callers can fail fast and alert.
+
+        Bumps the Prometheus PROXY_AUTH_FAILURES counter for dashboards.
+        """
+        self._auth_failures += 1
+        try:  # avoid hard import cycle if metrics module isn't loaded yet
+            from scrape.pipelines.metrics import PROXY_AUTH_FAILURES
+            PROXY_AUTH_FAILURES.inc()
+        except Exception:  # pragma: no cover
+            pass
+        log.warning(
+            "proxy.auth_failure",
+            count=self._auth_failures, threshold=self._auth_threshold,
+        )
+        if self._auth_failures >= self._auth_threshold:
+            log.error(
+                "proxy.auth_broken",
+                count=self._auth_failures,
+                hint="check PROXY_USERNAME / PROXY_PASSWORD",
+            )
+            raise ProxyAuthBroken(
+                f"Proxy authentication failed {self._auth_failures} times — "
+                "credentials likely invalid. Check PROXY_USERNAME/PROXY_PASSWORD.",
+            )
+
+    def reset_auth_failures(self) -> None:
+        """Called by callers on a successful proxy fetch — auth is fine."""
+        if self._auth_failures:
+            log.info("proxy.auth_recovered", was=self._auth_failures)
+            self._auth_failures = 0

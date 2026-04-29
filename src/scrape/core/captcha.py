@@ -25,6 +25,16 @@ CaptchaKind = Literal["turnstile", "recaptcha_v3", "hcaptcha"]
 
 CAPSOLVER_BASE = "https://api.capsolver.com"
 
+# Approximate CapSolver pricing as of 2026, USD per solve. Used as a fallback
+# when the API response doesn't include a price. Update when CapSolver changes
+# their rate card; never trust hardcoded numbers as gospel — the per-task cost
+# returned by /getTaskResult is authoritative when present.
+_DEFAULT_COST_USD: dict[str, float] = {
+    "turnstile": 0.0008,
+    "recaptcha_v3": 0.0010,
+    "hcaptcha": 0.0008,
+}
+
 
 @dataclass
 class SolveRequest:
@@ -113,8 +123,13 @@ class CapSolver:
                     if not token:
                         raise RuntimeError(f"CapSolver missing token in solution: {sol}")
                     elapsed = asyncio.get_event_loop().time() - start
-                    log.info("captcha.solved", kind=req.kind, elapsed_s=round(elapsed, 1))
-                    return SolveResult(token=token, elapsed_s=elapsed)
+                    # CapSolver returns per-task cost when available
+                    cost = float(gd.get("price") or sol.get("cost") or _DEFAULT_COST_USD.get(req.kind, 0.001))
+                    log.info(
+                        "captcha.solved", kind=req.kind,
+                        elapsed_s=round(elapsed, 1), cost_usd=cost,
+                    )
+                    return SolveResult(token=token, elapsed_s=elapsed, cost_estimate_usd=cost)
 
 
 class NullCaptchaSolver:

@@ -129,6 +129,16 @@ class HttpClient:
             )
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             body = resp.content or b""
+            # Approximate proxy bandwidth: response body + headers + a small
+            # constant for the request line and request headers. Only counts
+            # when we actually used a proxy; direct requests stay at 0.
+            req_overhead = len(req.body or b"") + sum(
+                len(k) + len(v) + 4 for k, v in merged_headers.items()
+            )
+            resp_headers_bytes = sum(
+                len(str(k)) + len(str(v)) + 4 for k, v in (resp.headers or {}).items()
+            )
+            proxy_bytes = (len(body) + resp_headers_bytes + req_overhead) if self._proxy else 0
             return FetchResult(
                 url=url,
                 final_url=str(resp.url),
@@ -139,6 +149,7 @@ class HttpClient:
                 tier_used=Tier.HTTP,
                 proxy_used=self._proxy,
                 fingerprint_id=self._impersonate,
+                proxy_bytes=proxy_bytes,
             )
         except Timeout:
             elapsed_ms = int((time.perf_counter() - start) * 1000)
@@ -146,8 +157,21 @@ class HttpClient:
             return _failure(url, elapsed_ms, BlockReason.TIMEOUT, self._proxy, self._impersonate)
         except RequestException as e:
             elapsed_ms = int((time.perf_counter() - start) * 1000)
-            log.warning("http.network_error", url=url, error=str(e))
-            return _failure(url, elapsed_ms, BlockReason.NETWORK, self._proxy, self._impersonate)
+            err_str = str(e)
+            # Curl error 56 with "response 407" is the diagnostic for proxy
+            # auth failure. Surface it as a distinct headers signal so the
+            # caller (tier_router) can feed it to ProxyManager's circuit
+            # breaker. We don't crash here — a single 407 might be transient.
+            is_auth_fail = "407" in err_str or "Authentication" in err_str
+            if is_auth_fail:
+                log.warning("http.proxy_auth_failed", url=url, error=err_str[:120])
+            else:
+                log.warning("http.network_error", url=url, error=err_str)
+            r = _failure(url, elapsed_ms, BlockReason.NETWORK, self._proxy, self._impersonate)
+            if is_auth_fail:
+                # tier_router checks this header to bump the circuit breaker.
+                r.headers = {"x-scrape-proxy-auth-failed": "1"}
+            return r
 
 
 def _failure(

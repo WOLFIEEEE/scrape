@@ -29,7 +29,14 @@ from scrape.extractors.llm_schema import SchemaExtractor, build_extractor
 from scrape.extractors.selectors import find_extractor
 from scrape.logging import get_logger
 from scrape.models import BlockReason, ExtractedRecord, FetchRequest, FetchResult, Tier
-from scrape.pipelines.metrics import EXTRACTED_TOTAL, FETCH_LATENCY, FETCHES_TOTAL, QUEUE_SIZE
+from scrape.pipelines.metrics import (
+    EXTRACTED_TOTAL,
+    FETCH_LATENCY,
+    FETCHES_TOTAL,
+    PROXY_BYTES_TOTAL,
+    QUEUE_SIZE,
+    SOLVER_COST_USD_TOTAL,
+)
 from scrape.pipelines.storage import Storage
 
 log = get_logger(__name__)
@@ -50,12 +57,14 @@ class Orchestrator:
         max_tier: Tier = Tier.BROWSER,
         use_browser: bool = True,
         use_llm: bool = False,
+        captcha_hint: str | None = None,
     ):
         self._settings = settings or get_settings()
         self._schema_name = schema_name
         self._schema = schema
         self._max_tier = max_tier
         self._use_llm = use_llm
+        self._captcha_hint = captcha_hint
         proxy_provider = build_provider(self._settings.proxy)
         self._proxies = ProxyManager(
             proxy_provider, sticky_minutes=self._settings.proxy.sticky_session_minutes,
@@ -70,10 +79,14 @@ class Orchestrator:
             )
         elif use_browser:
             log.warning("browser.disabled", reason="camoufox_not_installed")
+        unblock_cfg = self._settings.unblock
         self._unblock = build_unblock_provider(
-            provider=self._settings.unblock.provider,
-            endpoint=self._settings.unblock.endpoint,
-            timeout_s=self._settings.unblock.timeout_s,
+            provider=unblock_cfg.provider,
+            endpoint=unblock_cfg.endpoint,
+            timeout_s=unblock_cfg.timeout_s,
+            brightdata_api_key=unblock_cfg.brightdata_api_key,
+            brightdata_zone=unblock_cfg.brightdata_zone,
+            scrapfly_api_key=unblock_cfg.scrapfly_api_key,
         )
         if self._unblock is not None:
             log.info("unblock.enabled", provider=self._unblock.name)
@@ -127,7 +140,10 @@ class Orchestrator:
         if self._robots is not None and not await self._robots.allowed(url):
             log.info("robots.disallowed", url=url)
             return None
-        req = FetchRequest.model_validate({"url": url, "max_tier": self._max_tier})
+        req_payload: dict[str, Any] = {"url": url, "max_tier": self._max_tier}
+        if self._captcha_hint:
+            req_payload["captcha_hint"] = self._captcha_hint
+        req = FetchRequest.model_validate(req_payload)
         # Browser challenge-solving (page load + humanize + scroll) regularly
         # takes 60–90s. The wall-clock budget per request scales with the
         # highest tier we might escalate to.
@@ -151,6 +167,12 @@ class Orchestrator:
             ok=str(result.ok).lower(),
         ).inc()
         FETCH_LATENCY.labels(tier=str(int(result.tier_used))).observe(result.elapsed_ms / 1000)
+        if result.proxy_bytes:
+            PROXY_BYTES_TOTAL.labels(tier=str(int(result.tier_used))).inc(result.proxy_bytes)
+        if result.solver_cost_usd:
+            # Solver kind is best-effort tracked at Tier 2 only; current schema
+            # doesn't carry kind across tiers, so label by tier_used.
+            SOLVER_COST_USD_TOTAL.labels(kind="auto").inc(result.solver_cost_usd)
         await storage.save_fetch(result, job_id=job_id)
         return result
 

@@ -64,7 +64,7 @@ async def _execute(job_id: str) -> None:
     settings = get_settings()
     async with connect() as db:
         cur = await db.execute(
-            "SELECT urls_json, max_tier, use_browser, use_llm, schema_name, schema_json FROM jobs WHERE id = ?",
+            "SELECT urls_json, max_tier, use_browser, use_llm, schema_name, schema_json, captcha_hint FROM jobs WHERE id = ?",
             (job_id,),
         )
         row = await cur.fetchone()
@@ -77,6 +77,12 @@ async def _execute(job_id: str) -> None:
         use_llm = bool(row["use_llm"])
         schema_name = row["schema_name"]
         schema = json.loads(row["schema_json"]) if row["schema_json"] else None
+        # aiosqlite.Row doesn't support dict.get(); fall back gracefully when
+        # the captcha_hint column is missing on older DBs.
+        try:
+            captcha_hint = row["captcha_hint"]
+        except IndexError:
+            captcha_hint = None
 
         await _update_status(db, job_id, status="running", started_at=now_iso(), total=len(urls))
 
@@ -87,6 +93,7 @@ async def _execute(job_id: str) -> None:
         use_llm=use_llm,
         schema_name=schema_name,
         schema=schema,
+        captcha_hint=captcha_hint,
     )
 
     try:
@@ -99,7 +106,13 @@ async def _execute(job_id: str) -> None:
 
             async def _process(u: str) -> None:
                 async with sem:
-                    res = await orch.fetch_one(u, storage, job_id=job_id)
+                    try:
+                        res = await orch.fetch_one(u, storage, job_id=job_id)
+                    except Exception as e:
+                        # Includes ProxyAuthBroken — surface to the job error
+                        # but don't kill the whole gather; mark this URL failed.
+                        log.warning("job.url_error", job_id=job_id, url=u, error=str(e)[:200])
+                        res = None
                     ok = res is not None and res.ok
                     if res is not None:
                         await orch.extract(res, storage, job_id=job_id)

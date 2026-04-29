@@ -76,6 +76,13 @@ class TierRouter:
             ) as client:
                 merged_req = req.model_copy(update={"cookies": {**sess.cookies, **req.cookies}})
                 result = await client.fetch(merged_req)
+                # Detect a proxy auth failure — counts toward the global
+                # circuit breaker; raises ProxyAuthBroken on threshold so
+                # the orchestrator stops wasting work and alerts.
+                if result.headers.get("x-scrape-proxy-auth-failed"):
+                    self._proxies.report_auth_failure()
+                else:
+                    self._proxies.reset_auth_failures()
                 result.block_reason = detect(result)
                 self._sessions.update_cookies(sess, _extract_cookies(result.headers))
                 self._proxies.report(proxy_session, result.ok)

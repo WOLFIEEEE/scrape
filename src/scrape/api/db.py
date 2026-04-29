@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     use_llm INTEGER NOT NULL DEFAULT 0,
     schema_name TEXT,
     schema_json TEXT,
+    captcha_hint TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     error TEXT,
     total INTEGER NOT NULL DEFAULT 0,
@@ -111,6 +112,12 @@ _MIGRATIONS = (
         "idx_extracted_job_id",
         "CREATE INDEX IF NOT EXISTS idx_extracted_job_id ON extracted(job_id)",
     ),
+    # Cost telemetry — added so the API db's fetches table is in sync with
+    # what storage.py writes. Older deployments need the columns at runtime.
+    ("fetches.proxy_bytes", "ALTER TABLE fetches ADD COLUMN proxy_bytes INTEGER NOT NULL DEFAULT 0"),
+    ("fetches.solver_cost_usd", "ALTER TABLE fetches ADD COLUMN solver_cost_usd REAL NOT NULL DEFAULT 0"),
+    # Job-level CAPTCHA hint override (Tier-2 fallback)
+    ("jobs.captcha_hint", "ALTER TABLE jobs ADD COLUMN captcha_hint TEXT"),
 )
 
 

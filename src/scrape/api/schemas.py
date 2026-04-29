@@ -40,6 +40,10 @@ class JobCreate(BaseModel):
     use_llm: bool = False
     schema_name: str | None = Field(default=None, max_length=80)
     extraction_schema: dict[str, Any] | None = None
+    # When the operator already knows what CAPTCHA the target ships, override
+    # the auto-detector. Useful for hCaptcha rendered in shadow DOM and for
+    # SPAs where the widget loads after our content snapshot.
+    captcha_hint: Literal["turnstile", "recaptcha_v3", "hcaptcha"] | None = None
 
 
 class JobOut(BaseModel):
@@ -56,6 +60,7 @@ class JobOut(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    captcha_hint: Literal["turnstile", "recaptcha_v3", "hcaptcha"] | None = None
 
 
 class JobListItem(BaseModel):
@@ -78,6 +83,8 @@ class FetchOut(BaseModel):
     elapsed_ms: int
     body_size: int
     fetched_at: datetime
+    proxy_bytes: int = 0
+    solver_cost_usd: float = 0.0
 
 
 class ExtractedOut(BaseModel):

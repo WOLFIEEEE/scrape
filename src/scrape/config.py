@@ -53,12 +53,18 @@ class LLMConfig(BaseSettings):
 
 
 class UnblockConfig(BaseSettings):
-    """Tier-3 unblock provider — FlareSolverr (self-hosted) or future managed adapters."""
+    """Tier-3 unblock provider — FlareSolverr (self-hosted) or commercial adapters
+    (Bright Data Web Unlocker, Scrapfly)."""
     model_config = SettingsConfigDict(env_prefix="UNBLOCK_", env_file=".env", extra="ignore")
 
-    provider: Literal["none", "flaresolverr"] = "none"
+    provider: Literal["none", "flaresolverr", "brightdata", "scrapfly"] = "none"
     endpoint: str = "http://localhost:8191"
     timeout_s: int = 60
+    # Commercial provider credentials. Read from env so they live in .env, not
+    # in the docker-compose YAML or images.
+    brightdata_api_key: str = Field(default="", validation_alias="BRIGHTDATA_API_KEY")
+    brightdata_zone: str = Field(default="web_unlocker1", validation_alias="BRIGHTDATA_ZONE")
+    scrapfly_api_key: str = Field(default="", validation_alias="SCRAPFLY_API_KEY")
 
 
 class StorageConfig(BaseSettings):

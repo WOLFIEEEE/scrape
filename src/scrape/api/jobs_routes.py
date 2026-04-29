@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import csv
 import io
 import json
@@ -32,6 +33,10 @@ router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
 
 def _row_to_job_out(row: aiosqlite.Row) -> JobOut:
+    try:
+        hint = row["captcha_hint"]
+    except IndexError:
+        hint = None
     return JobOut(
         id=row["id"], name=row["name"], status=row["status"],
         max_tier=row["max_tier"], use_browser=bool(row["use_browser"]),
@@ -39,6 +44,7 @@ def _row_to_job_out(row: aiosqlite.Row) -> JobOut:
         succeeded=row["succeeded"], error=row["error"],
         created_at=row["created_at"], started_at=row["started_at"],
         finished_at=row["finished_at"],
+        captcha_hint=hint if hint in ("turnstile", "recaptcha_v3", "hcaptcha") else None,
     )
 
 
@@ -114,12 +120,13 @@ async def create_job(
     await db.execute(
         """INSERT INTO jobs (
             id, user_id, name, urls_json, max_tier, use_browser, use_llm,
-            schema_name, schema_json, status, total, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+            schema_name, schema_json, captcha_hint, status, total, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
         (
             job_id, user.id, body.name, urls_json, body.max_tier,
             int(body.use_browser), int(body.use_llm),
-            body.schema_name, schema_json, len(body.urls), now_iso(),
+            body.schema_name, schema_json, body.captcha_hint,
+            len(body.urls), now_iso(),
         ),
     )
     await db.commit()
@@ -184,15 +191,19 @@ async def duplicate_job(
 
     new_id = new_job_id()
     suffix_name = f"{src['name']} (rerun)"[:120]
+    src_hint: str | None = None
+    with contextlib.suppress(IndexError, KeyError):
+        src_hint = src["captcha_hint"]
     await db.execute(
         """INSERT INTO jobs (
             id, user_id, name, urls_json, max_tier, use_browser, use_llm,
-            schema_name, schema_json, status, total, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
+            schema_name, schema_json, captcha_hint, status, total, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)""",
         (
             new_id, user.id, suffix_name, src["urls_json"], src["max_tier"],
             src["use_browser"], src["use_llm"],
-            src["schema_name"], src["schema_json"], src["total"], now_iso(),
+            src["schema_name"], src["schema_json"], src_hint,
+            src["total"], now_iso(),
         ),
     )
     await db.commit()
@@ -291,7 +302,7 @@ async def list_job_fetches(
     await _load_job_owned(job_id, user, db)
     cur = await db.execute(
         """SELECT id, url, final_url, status, tier_used, block_reason,
-                  elapsed_ms, body_size, fetched_at
+                  elapsed_ms, body_size, fetched_at, proxy_bytes, solver_cost_usd
            FROM fetches WHERE job_id = ?
            ORDER BY id DESC LIMIT ? OFFSET ?""",
         (job_id, limit, offset),
@@ -302,6 +313,8 @@ async def list_job_fetches(
             id=r["id"], url=r["url"], final_url=r["final_url"], status=r["status"],
             tier_used=r["tier_used"], block_reason=r["block_reason"],
             elapsed_ms=r["elapsed_ms"], body_size=r["body_size"], fetched_at=r["fetched_at"],
+            proxy_bytes=r["proxy_bytes"] or 0,
+            solver_cost_usd=r["solver_cost_usd"] or 0.0,
         )
         for r in rows
     ]
