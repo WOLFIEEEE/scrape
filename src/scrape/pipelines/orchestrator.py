@@ -128,14 +128,20 @@ class Orchestrator:
             log.info("robots.disallowed", url=url)
             return None
         req = FetchRequest.model_validate({"url": url, "max_tier": self._max_tier})
+        # Browser challenge-solving (page load + humanize + scroll) regularly
+        # takes 60–90s. The wall-clock budget per request scales with the
+        # highest tier we might escalate to.
+        budget_s = self._settings.crawler.request_timeout_s * (
+            6 if self._max_tier >= Tier.BROWSER else 2
+        )
         async with self._limiter.slot(url):
             try:
                 result = await asyncio.wait_for(
                     self._router.fetch(req),
-                    timeout=self._settings.crawler.request_timeout_s * 2,
+                    timeout=budget_s,
                 )
             except TimeoutError:
-                log.warning("orchestrator.timeout", url=url)
+                log.warning("orchestrator.timeout", url=url, budget_s=budget_s)
                 return None
         # Re-evaluate detection (router may not have run it post-escalation)
         result.block_reason = detect(result)

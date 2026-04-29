@@ -271,8 +271,13 @@ class BrowserPool:
                 existing = sess
             try:
                 yield existing
-            finally:
-                pass  # keep alive in the pool
+            except (asyncio.CancelledError, Exception):
+                # If the caller was cancelled or anything escapes, the browser
+                # context is likely in a torn-down state — playwright raises
+                # TargetClosedError on the next page.goto. Drop it so the next
+                # caller gets a fresh browser instead of a dead one.
+                await self.discard(key)
+                raise
 
     async def discard(self, key: str) -> None:
         sess = self._sessions.pop(key, None)
