@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { Section } from "@/components/marketing/section";
+import { JsonLd } from "@/components/marketing/json-ld";
 import { cn } from "@/lib/utils";
+
+const SITE_URL = process.env.SCRAPE_PUBLIC_URL || "http://localhost:3000";
 
 export const DOC_NAV = [
   {
@@ -68,8 +71,21 @@ export function DocShell({
   const prev = idx > 0 ? flat[idx - 1] : null;
   const next = idx >= 0 && idx < flat.length - 1 ? flat[idx + 1] : null;
 
+  // BreadcrumbList helps Google show the docs hierarchy in search results,
+  // which both improves CTR and surfaces deep doc links for query intent.
+  const breadcrumbJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "Home", item: SITE_URL },
+      { "@type": "ListItem", position: 2, name: "Docs", item: `${SITE_URL}/docs` },
+      { "@type": "ListItem", position: 3, name: title, item: `${SITE_URL}${current}` },
+    ],
+  };
+
   return (
     <Section className="pt-10 pb-20">
+      <JsonLd data={breadcrumbJsonLd} />
       <div className="grid grid-cols-1 lg:grid-cols-[240px_1fr] gap-12">
         <aside className="hidden lg:block">
           <div className="sticky top-24 space-y-8">

@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "REST API" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "REST API",
+  description: "OpenAPI 3.1 spec served at /openapi.json by the API.",
+  path: "/docs/api",
+});
 export default function Page() {
   return (
     <DocShell title="REST API" current="/docs/api" description="OpenAPI 3.1 spec served at /openapi.json by the API.">

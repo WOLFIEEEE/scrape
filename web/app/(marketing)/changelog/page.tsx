@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import { Section } from "@/components/marketing/section";
+import { pageMeta } from "@/lib/seo";
 
-export const metadata = { title: "Field logs" };
+export const metadata: Metadata = pageMeta({
+  title: "Changelog · Field logs",
+  description:
+    "What shipped, when. Tier-2 CAPTCHA solving, SSRF defense, IPRoyal proxy adapter, FlareSolverr Tier-3 unblock, observability stack — release-by-release notes.",
+  path: "/changelog",
+});
 
 const ENTRIES = [
   {

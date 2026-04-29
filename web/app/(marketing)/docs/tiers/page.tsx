@@ -1,7 +1,13 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 
-export const metadata = { title: "Tier escalation" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Tier escalation",
+  description: "How auto-promotion works and when to override it.",
+  path: "/docs/tiers",
+});
 export default function Page() {
   return (
     <DocShell title="Tier escalation" current="/docs/tiers" description="How auto-promotion works and when to override it.">

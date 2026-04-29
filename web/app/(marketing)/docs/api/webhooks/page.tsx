@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "Webhooks" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Webhooks",
+  description: "HMAC-signed callbacks on job state changes.",
+  path: "/docs/api/webhooks",
+});
 export default function Page() {
   return (
     <DocShell title="Webhooks" current="/docs/api/webhooks" description="HMAC-signed callbacks on job state changes.">

@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "CAPTCHA" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "CAPTCHA",
+  description: "Cloudflare Turnstile, reCAPTCHA v3, hCaptcha — solved automatically.",
+  path: "/docs/captcha",
+});
 export default function Page() {
   return (
     <DocShell title="CAPTCHA solving" current="/docs/captcha" description="Cloudflare Turnstile, reCAPTCHA v3, hCaptcha — solved automatically.">

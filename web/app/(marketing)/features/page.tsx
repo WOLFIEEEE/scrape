@@ -1,11 +1,18 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Section } from "@/components/marketing/section";
 import { SectionRule } from "@/components/marketing/section-rule";
 import { CodeBlock } from "@/components/marketing/code-block";
+import { pageMeta } from "@/lib/seo";
 
-export const metadata = { title: "Features" };
+export const metadata: Metadata = pageMeta({
+  title: "Features",
+  description:
+    "Real-Chrome TLS, stealth Camoufox browsers, sticky residential proxies, CAPTCHA injection, AI extraction, observability — every layer of a production scraping pipeline in one project.",
+  path: "/features",
+});
 
 const PILLARS = [
   {

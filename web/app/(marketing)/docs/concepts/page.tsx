@@ -1,7 +1,13 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 
-export const metadata = { title: "Concepts" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Concepts",
+  description: "The mental model: tiers, sessions, fingerprints, escalation.",
+  path: "/docs/concepts",
+});
 export default function Page() {
   return (
     <DocShell title="Core concepts" current="/docs/concepts" description="The mental model: tiers, sessions, fingerprints, escalation.">

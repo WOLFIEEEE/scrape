@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "Quickstart" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Quickstart",
+  description: "From zero to first crawl in under 5 minutes.",
+  path: "/docs/quickstart",
+});
 export default function Page() {
   return (
     <DocShell title="Quickstart" current="/docs/quickstart" description="From zero to first crawl in under 5 minutes.">

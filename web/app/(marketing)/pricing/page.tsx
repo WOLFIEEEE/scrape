@@ -1,10 +1,17 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { ArrowUpRight, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Section } from "@/components/marketing/section";
 import { SectionRule } from "@/components/marketing/section-rule";
+import { pageMeta } from "@/lib/seo";
 
-export const metadata = { title: "Pricing" };
+export const metadata: Metadata = pageMeta({
+  title: "Pricing",
+  description:
+    "Free forever for personal projects (10K Tier-0 fetches/mo). Pro at $49/mo for 250K fetches and Tiers 0–1. Enterprise pricing available. Self-host the same code under Apache-2.0.",
+  path: "/pricing",
+});
 
 const TIERS = [
   {

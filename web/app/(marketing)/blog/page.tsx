@@ -1,38 +1,38 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { Section } from "@/components/marketing/section";
+import { POSTS_INDEX } from "@/lib/blog";
+import { JsonLd } from "@/components/marketing/json-ld";
+import { pageMeta, SITE_URL } from "@/lib/seo";
 
-export const metadata = { title: "Dispatches" };
+export const metadata: Metadata = pageMeta({
+  title: "Dispatches",
+  description:
+    "Long-form posts on anti-bot bypass, scraping at scale, and shipping data pipelines. Engineering, AI, ethics, and patterns from the trenches.",
+  path: "/blog",
+});
 
-const POSTS = [
-  {
-    n: "001", slug: "tls-fingerprinting-2026",
-    title: "Why your scraper is still getting flagged at the TCP layer",
-    excerpt: "JA4+ killed the static fingerprint hash. Here's what replaced it and how curl-impersonate keeps up.",
-    date: "Apr 24, 2026", tag: "ENGINEERING", read: "8 MIN",
-  },
-  {
-    n: "002", slug: "tier-routing",
-    title: "Tier routing: the mental model that cuts scraping costs by 80%",
-    excerpt: "Stop running every URL through a headless browser. Start with the cheapest stratum.",
-    date: "Apr 17, 2026", tag: "PATTERNS", read: "6 MIN",
-  },
-  {
-    n: "003", slug: "claude-extraction-prompt-cache",
-    title: "Schema-driven extraction with Claude — and a 90% prompt cache",
-    excerpt: "How we cut LLM extraction cost from $30/1k pages to $3 with one Anthropic feature.",
-    date: "Apr 10, 2026", tag: "AI", read: "5 MIN",
-  },
-  {
-    n: "004", slug: "ethical-scraping",
-    title: "Scraping ethically in 2026 (post-hiQ, post-AI Act)",
-    excerpt: "What changed legally, what didn't, and what defaults every scraper should ship with.",
-    date: "Apr 3, 2026", tag: "COMPLIANCE", read: "10 MIN",
-  },
-];
+const POSTS = POSTS_INDEX;
 
 export default function BlogPage() {
+  const blogJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Blog",
+    name: "Scrape · Dispatches",
+    url: `${SITE_URL}/blog`,
+    description:
+      "Engineering posts on anti-bot bypass, tier routing, LLM extraction, and ethical scraping.",
+    blogPost: POSTS.map((p) => ({
+      "@type": "BlogPosting",
+      headline: p.title,
+      datePublished: p.publishedAt,
+      url: `${SITE_URL}/blog/${p.slug}`,
+      description: p.excerpt,
+    })),
+  };
   return (
     <>
+      <JsonLd data={blogJsonLd} />
       <section className="border-b border-line">
         <div className="container mx-auto max-w-6xl px-6 pt-20 pb-12">
           <div className="eyebrow mb-6">/ DISPATCHES</div>

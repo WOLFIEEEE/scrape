@@ -1,9 +1,16 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Section } from "@/components/marketing/section";
+import { pageMeta } from "@/lib/seo";
 
-export const metadata = { title: "Bureau" };
+export const metadata: Metadata = pageMeta({
+  title: "About · The Bureau",
+  description:
+    "Scrape is built by people who shipped data pipelines. Tooling for engineers — not for VCs reading decks. Open source, ethical-by-default, and serious about scraping.",
+  path: "/about",
+});
 
 export default function AboutPage() {
   return (

@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "Proxies" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Proxies",
+  description: "Provider config, sticky sessions, country pinning.",
+  path: "/docs/proxies",
+});
 export default function Page() {
   return (
     <DocShell title="Proxies" current="/docs/proxies" description="Provider config, sticky sessions, country pinning.">

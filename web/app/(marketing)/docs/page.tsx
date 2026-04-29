@@ -1,9 +1,16 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { Section } from "@/components/marketing/section";
 import { SectionRule } from "@/components/marketing/section-rule";
 import { CodeBlock } from "@/components/marketing/code-block";
+import { pageMeta } from "@/lib/seo";
 
-export const metadata = { title: "The Manual" };
+export const metadata: Metadata = pageMeta({
+  title: "Documentation · The Manual",
+  description:
+    "Quickstart, concepts, CLI, REST API, deployment, observability, scaling, ethics. The complete operator's manual for the Scrape platform.",
+  path: "/docs",
+});
 
 const SECTIONS = [
   {

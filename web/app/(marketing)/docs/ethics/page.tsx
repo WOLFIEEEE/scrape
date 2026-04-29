@@ -1,7 +1,13 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 
-export const metadata = { title: "Ethical scraping" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Ethical scraping",
+  description: "Defaults that don't get you sued — or banned at the network level.",
+  path: "/docs/ethics",
+});
 export default function Page() {
   return (
     <DocShell title="Ethical scraping" current="/docs/ethics" description="Defaults that don't get you sued — or banned at the network level.">

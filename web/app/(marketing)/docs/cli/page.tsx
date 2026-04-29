@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "CLI" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "CLI",
+  description: "Every command and flag the scrape CLI accepts.",
+  path: "/docs/cli",
+});
 export default function Page() {
   return (
     <DocShell title="CLI reference" current="/docs/cli" description="Every command and flag the scrape CLI accepts.">

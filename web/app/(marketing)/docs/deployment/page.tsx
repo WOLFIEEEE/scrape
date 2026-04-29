@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "Deployment" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Deployment",
+  description: "Single-box, docker-compose, kubernetes — same code.",
+  path: "/docs/deployment",
+});
 export default function Page() {
   return (
     <DocShell title="Deployment" current="/docs/deployment" description="Single-box, docker-compose, kubernetes — same code.">

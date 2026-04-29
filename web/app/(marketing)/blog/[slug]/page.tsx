@@ -1,8 +1,12 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import type { Metadata } from "next";
 import { Section } from "@/components/marketing/section";
 import { CodeBlock } from "@/components/marketing/code-block";
+import { JsonLd } from "@/components/marketing/json-ld";
+import { getPostMeta } from "@/lib/blog";
+import { pageMeta, SITE_URL } from "@/lib/seo";
 
 const POSTS: Record<string, {
   title: string; date: string; tag: string; read: string;
@@ -146,18 +150,57 @@ export function generateStaticParams() {
   return Object.keys(POSTS).map((slug) => ({ slug }));
 }
 
-export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }) {
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
-  const p = POSTS[slug];
-  return p ? { title: p.title } : { title: "Post" };
+  const meta = getPostMeta(slug);
+  if (!meta) return { title: "Post not found", robots: { index: false, follow: false } };
+  // Start from the standard pageMeta() (gets canonical, og:image, twitter card)
+  // and overlay article-specific fields like publishedTime + tags.
+  const base = pageMeta({
+    title: meta.title,
+    description: meta.excerpt,
+    path: `/blog/${slug}`,
+    ogType: "article",
+  });
+  return {
+    ...base,
+    openGraph: {
+      ...(base.openGraph ?? {}),
+      type: "article",
+      publishedTime: meta.publishedAt,
+      authors: ["Scrape Engineering"],
+      tags: [meta.tag.toLowerCase()],
+    },
+  };
 }
 
 export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const post = POSTS[slug];
-  if (!post) notFound();
+  const meta = getPostMeta(slug);
+  if (!post || !meta) notFound();
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: meta.title,
+    description: meta.excerpt,
+    datePublished: meta.publishedAt,
+    dateModified: meta.publishedAt,
+    url: `${SITE_URL}/blog/${slug}`,
+    inLanguage: "en-US",
+    author: { "@type": "Organization", name: "Scrape" },
+    publisher: {
+      "@type": "Organization",
+      name: "Scrape",
+      url: SITE_URL,
+      logo: { "@type": "ImageObject", url: `${SITE_URL}/favicon.svg` },
+    },
+    mainEntityOfPage: { "@type": "WebPage", "@id": `${SITE_URL}/blog/${slug}` },
+    articleSection: meta.tag,
+  };
   return (
     <Section className="py-20">
+      <JsonLd data={jsonLd} />
       <div className="max-w-2xl mx-auto">
         <Link href="/blog" className="inline-flex items-center gap-2 small-caps text-muted hover:text-rust mb-8 transition-colors">
           <ArrowLeft className="h-3 w-3" /> All dispatches

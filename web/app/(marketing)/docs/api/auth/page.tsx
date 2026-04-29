@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "Authentication" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Authentication",
+  description: "Cookie sessions for browsers. Bearer tokens (API keys) for servers.",
+  path: "/docs/api/auth",
+});
 export default function Page() {
   return (
     <DocShell title="Authentication" current="/docs/api/auth" description="Cookie sessions for browsers. Bearer tokens (API keys) for servers.">

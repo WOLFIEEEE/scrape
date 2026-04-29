@@ -1,7 +1,13 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 
-export const metadata = { title: "Scaling" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Scaling",
+  description: "Concurrency tuning, queue partitioning, cost controls.",
+  path: "/docs/scaling",
+});
 export default function Page() {
   return (
     <DocShell title="Scaling" current="/docs/scaling" description="Concurrency tuning, queue partitioning, cost controls.">

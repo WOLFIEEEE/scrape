@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import { Section } from "@/components/marketing/section";
+import { pageMeta } from "@/lib/seo";
 
-export const metadata = { title: "Terms" };
+export const metadata: Metadata = pageMeta({
+  title: "Terms of service",
+  description:
+    "Terms of service for the Scrape managed platform. Acceptable use, ethics policy, billing terms, IP, liability, and termination.",
+  path: "/terms",
+});
 
 export default function TermsPage() {
   return (

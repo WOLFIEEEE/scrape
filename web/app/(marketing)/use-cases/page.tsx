@@ -1,10 +1,17 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { ArrowUpRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Section } from "@/components/marketing/section";
 import { SectionRule } from "@/components/marketing/section-rule";
+import { pageMeta } from "@/lib/seo";
 
-export const metadata = { title: "Field guide" };
+export const metadata: Metadata = pageMeta({
+  title: "Use cases · Field guide",
+  description:
+    "Eight common patterns Scrape handles cleanly: e-commerce price intelligence, market research, news monitoring, lead generation, real estate, SERP, knowledge-base ingestion, compliance monitoring.",
+  path: "/use-cases",
+});
 
 const CASES = [
   { code: "F-01", name: "E-commerce price intelligence", body: "Track competitor prices, stock, and assortment across millions of SKUs.", strata: ["01", "Schema", "Webhooks"] },

@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "Selectors" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Selectors",
+  description: "Hand-tuned extractors when the schema is stable.",
+  path: "/docs/selectors",
+});
 export default function Page() {
   return (
     <DocShell title="Per-site CSS selectors" current="/docs/selectors" description="Hand-tuned extractors when the schema is stable.">

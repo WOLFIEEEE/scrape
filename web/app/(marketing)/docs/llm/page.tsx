@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "LLM extraction" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "LLM extraction",
+  description: "Claude-powered structured extraction with prompt caching.",
+  path: "/docs/llm",
+});
 export default function Page() {
   return (
     <DocShell title="LLM schema extraction" current="/docs/llm" description="Claude-powered structured extraction with prompt caching.">

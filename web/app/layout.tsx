@@ -37,8 +37,20 @@ export const metadata: Metadata = {
     type: "website",
     url: SITE_URL,
     locale: "en_US",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "Scrape — The Web, Excavated.",
+      },
+    ],
   },
-  twitter: { card: "summary_large_image", title: "Scrape — The Web, Excavated." },
+  twitter: {
+    card: "summary_large_image",
+    title: "Scrape — The Web, Excavated.",
+    images: ["/opengraph-image"],
+  },
   icons: { icon: "/favicon.svg" },
   robots: { index: true, follow: true },
 };

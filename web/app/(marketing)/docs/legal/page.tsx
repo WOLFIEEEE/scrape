@@ -1,7 +1,13 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 
-export const metadata = { title: "Legal landscape" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Legal landscape",
+  description: "What changed in 2026 — what didn't — and what defaults every scraper should ship with.",
+  path: "/docs/legal",
+});
 export default function Page() {
   return (
     <DocShell title="Legal landscape" current="/docs/legal" description="What changed in 2026 — what didn't — and what defaults every scraper should ship with.">

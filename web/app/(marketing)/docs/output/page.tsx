@@ -1,8 +1,14 @@
 import { DocShell, DocSection } from "@/components/marketing/doc-shell";
 import { CodeBlock } from "@/components/marketing/code-block";
 
-export const metadata = { title: "Output formats" };
+import type { Metadata } from "next";
+import { pageMeta } from "@/lib/seo";
 
+export const metadata: Metadata = pageMeta({
+  title: "Output formats",
+  description: "JSON, CSV, NDJSON. Sinks: filesystem, Postgres, S3-compatible.",
+  path: "/docs/output",
+});
 export default function Page() {
   return (
     <DocShell title="Output formats" current="/docs/output" description="JSON, CSV, NDJSON. Sinks: filesystem, Postgres, S3-compatible.">

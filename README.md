@@ -15,7 +15,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-c14a1a.svg)](LICENSE)
 [![Python: 3.12+](https://img.shields.io/badge/python-3.12%2B-0a0908.svg)](https://www.python.org/)
 [![Next.js: 15](https://img.shields.io/badge/next.js-15-0a0908.svg)](https://nextjs.org/)
-[![Tests: 73 passing](https://img.shields.io/badge/tests-73_passing-a3ff12.svg)](#testing--development)
+[![Tests: 89 passing](https://img.shields.io/badge/tests-89_passing-a3ff12.svg)](#testing--development)
 [![Docker compose: ready](https://img.shields.io/badge/docker_compose-ready-a3ff12.svg)](#1-docker-compose-recommended)
 
 [Quickstart](#quickstart) · [Architecture](#architecture) · [API](#rest-api) · [CLI](#cli) · [Configuration](#configuration) · [Self-hosting](#self-hosted-zero-paid-services) · [Production](#production-deployment)
@@ -79,16 +79,18 @@ Five out of eight protected targets pass at the cheapest tier. The other three a
 |     | Component                | Notes                                                           |
 |-----|--------------------------|-----------------------------------------------------------------|
 | 🛡  | **Anti-bot bypass**      | Real-Chrome TLS (JA3/JA4+) via `curl_cffi`; Camoufox + Nodriver browsers; coherent fingerprint bundles |
-| 🌍  | **Proxy provider**       | Decodo · IPRoyal · Bright Data · Oxylabs · custom — switchable via env. Sticky sessions + health scoring |
-| 🔓  | **CAPTCHA / unblock**    | CapSolver (Turnstile · reCAPTCHA · hCaptcha) **or** self-hosted FlareSolverr |
+| 🕵  | **Block detection**      | Cloudflare · DataDome · PerimeterX · Akamai Bot Manager · Incapsula · Kasada · Reddit interstitial — auto-classified, auto-escalated |
+| 🌍  | **Proxy provider**       | Decodo · IPRoyal · Bright Data · Oxylabs · custom — provider-specific username/password formats handled internally; sticky sessions + health scoring; 407 circuit breaker |
+| 🔓  | **CAPTCHA / unblock**    | CapSolver (Turnstile · reCAPTCHA · hCaptcha) **or** self-hosted FlareSolverr · per-job `captcha_hint` override |
 | 🧠  | **Extraction**           | Per-site CSS selectors **+** pluggable LLM (Anthropic **or** Ollama) with prompt caching |
 | 🖥  | **Web app**              | Next.js 15 dashboard — auth, jobs, settings, API keys, webhooks, usage |
 | 🌐  | **REST API**             | FastAPI · OpenAPI 3.1 · cookie + bearer auth · SSE live progress · HMAC webhooks |
+| 🔐  | **Security hardening**   | SSRF defense (block private/loopback/link-local) · JWT-secured cookies · bcrypt · per-IP auth rate limit |
 | 💾  | **Storage**              | SQLite (single-box) → Postgres-ready · content-addressed raw HTML |
-| 📊  | **Observability**        | Prometheus metrics · Grafana dashboards · structured JSON logs   |
+| 📊  | **Observability**        | Prometheus metrics — fetches · latency · proxy bytes · solver $ · proxy auth failures · Grafana dashboards · structured JSON logs |
 | ⚖   | **Ethical defaults**     | robots.txt enforced · per-host rate limiting · audited proxies only |
 | 🐳  | **Container-native**     | One-command `docker compose up` brings the whole stack online   |
-| 🧪  | **Tests**                | 73 passing — unit · live integration · API end-to-end           |
+| 🧪  | **Tests**                | 89 passing — unit · live integration · API end-to-end           |
 
 ---
 
@@ -492,7 +494,7 @@ Then:
 
 ```bash
 # Backend
-uv run pytest                  # 73 tests · unit + live + API e2e
+uv run pytest                  # 89 tests · unit + live + API e2e
 uv run ruff check src tests    # lint
 uv run scripts/verify_antibot.py   # live anti-bot verification
 
@@ -508,7 +510,7 @@ The test suite uses [`pytest-asyncio`](https://pytest-asyncio.readthedocs.io/) i
 ### Repository hygiene at HEAD
 
 ```
-✓ 73 / 73   Python tests passing
+✓ 89 / 89   Python tests passing  (unit · live integration · full API e2e)
 ✓ 0         ruff errors
 ✓ 0         ESLint errors
 ✓ 0         TypeScript errors

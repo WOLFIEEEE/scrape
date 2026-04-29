@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -8,6 +9,17 @@ import { Button } from "@/components/ui/button";
 import { Section, SectionHeading } from "@/components/marketing/section";
 import { SectionRule } from "@/components/marketing/section-rule";
 import { CodeBlock } from "@/components/marketing/code-block";
+import { JsonLd } from "@/components/marketing/json-ld";
+import { pageMeta, SITE_URL } from "@/lib/seo";
+
+export const metadata: Metadata = pageMeta({
+  title: "Scrape — Production-grade web scraping infrastructure",
+  description:
+    "Scrape automatically routes through HTTP, stealth browser, CAPTCHA solving, and managed unblock — paying for the cheapest tier that works. Open-source, self-hostable, ethical-by-default.",
+  path: "/home",
+  ogTitle: "Scrape — The Web, Excavated.",
+  ogDescription: "Strip the surface. Read the strata. Extract the signal.",
+});
 
 const HERO_CODE = `# Stratum 0 — Surface
 $ scrape crawl https://target.example/p \\
@@ -67,9 +79,77 @@ const STEPS = [
   ["III.", "Receive findings", "Stream results live, download JSON / CSV, or push to your webhook. Fully typed."],
 ];
 
+// Three structured-data blobs Google will pick up:
+//   1. Organization — links the brand to its socials / logo / canonical site
+//   2. SoftwareApplication — gets us into the rich result lane for SaaS
+//   3. FAQPage — "people also ask" surface; answers must literally appear on
+//      the page. We mirror them in the FAQ markup below.
+const ORG_JSONLD = {
+  "@context": "https://schema.org",
+  "@type": "Organization",
+  name: "Scrape",
+  url: SITE_URL,
+  logo: `${SITE_URL}/favicon.svg`,
+  description:
+    "Production-grade web scraping infrastructure. Tiered escalation through anti-bot, residential proxies, CAPTCHA solving, and AI extraction.",
+  sameAs: ["https://github.com/WOLFIEEEE/scrape"],
+};
+
+const APP_JSONLD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Scrape",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Linux, macOS, Windows (Docker)",
+  description:
+    "Open-source web scraping platform with tiered HTTP / browser / CAPTCHA / unblock escalation, residential proxy rotation, and Claude-based AI extraction.",
+  url: SITE_URL,
+  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+  // Helps surface "scrape APIs", "scraping software", "anti-bot" intents.
+  keywords:
+    "web scraping, anti-bot bypass, Cloudflare bypass, DataDome, residential proxy, CAPTCHA solver, AI extraction, Camoufox, curl_cffi",
+  softwareVersion: "0.5",
+};
+
+const FAQS = [
+  {
+    q: "What makes Scrape different from a simple HTTP scraper or a headless browser?",
+    a: "A single-tier scraper either over-pays (everything goes through a $0.02 browser) or under-delivers (gets blocked on protected pages). Scrape routes each URL through four tiers — TLS-impersonated HTTP, stealth browser, CAPTCHA solver, managed unblock — and only pays for the depth a given page actually requires. ~80% of pages clear at Tier 0.",
+  },
+  {
+    q: "Does Scrape handle Cloudflare, DataDome, and PerimeterX?",
+    a: "Yes. Cloudflare Turnstile and DataDome are typically beaten by Tier 0 (curl_cffi + residential IP) or Tier 1 (Camoufox stealth Firefox). PerimeterX and other behavioral-scoring vendors require Tier 3 — a commercial managed unblocker (Bright Data Web Unlocker or Scrapfly) wired in via UNBLOCK_PROVIDER.",
+  },
+  {
+    q: "Can I self-host Scrape?",
+    a: "Yes — the entire stack is Apache-2.0 licensed and ships as a Docker Compose file. The free FlareSolverr container can serve as Tier 3, and Ollama can replace Anthropic for LLM extraction. Self-hosting needs zero paid services.",
+  },
+  {
+    q: "Does Scrape respect robots.txt?",
+    a: "By default, yes. CRAWL_RESPECT_ROBOTS=true is the shipped default and the orchestrator skips disallowed URLs. Operators can opt out per deployment, but the default is ethical-by-design.",
+  },
+  {
+    q: "What does it cost to run at scale?",
+    a: "At ~80% Tier-0 success on 1M pages, total spend is ~$280 (proxy bandwidth + LLM extraction with prompt caching). The same workload through a browser-only scraper is ~$17,000 — Scrape's tier router exists specifically to avoid that bill.",
+  },
+];
+
+const FAQ_JSONLD = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  mainEntity: FAQS.map(({ q, a }) => ({
+    "@type": "Question",
+    name: q,
+    acceptedAnswer: { "@type": "Answer", text: a },
+  })),
+};
+
 export default function HomePage() {
   return (
     <>
+      <JsonLd data={ORG_JSONLD} />
+      <JsonLd data={APP_JSONLD} />
+      <JsonLd data={FAQ_JSONLD} />
       {/* ===== Hero ===== */}
       <section className="relative overflow-hidden border-b border-line">
         <div className="absolute inset-0 dig-grid dig-fade opacity-40 pointer-events-none"></div>
@@ -305,6 +385,30 @@ for row in client.jobs.stream(job.id):
               <div className="display-up text-3xl">{t}</div>
               <p className="mt-3 text-sm text-muted leading-relaxed">{b}</p>
             </div>
+          ))}
+        </div>
+      </Section>
+
+      {/* ===== FAQ ===== */}
+      <Section className="py-24">
+        <SectionRule label="§ 06 · QUESTIONS · ANSWERED" />
+        <SectionHeading
+          title="Common questions, plain answers."
+          description="If you're picking a scraping stack and trying to understand whether Scrape fits, start here. Linked sources for everything."
+        />
+        <div className="mt-16 max-w-3xl mx-auto space-y-px">
+          {FAQS.map(({ q, a }, i) => (
+            <details
+              key={q}
+              className="group border border-line p-7 open:bg-bg-2/40"
+              {...(i === 0 ? { open: true } : {})}
+            >
+              <summary className="cursor-pointer flex items-start justify-between gap-6 list-none">
+                <span className="display-up text-xl md:text-2xl">{q}</span>
+                <span className="small-caps text-rust shrink-0 group-open:rotate-90 transition-transform">→</span>
+              </summary>
+              <p className="mt-5 text-sm md:text-base text-muted leading-relaxed">{a}</p>
+            </details>
           ))}
         </div>
       </Section>

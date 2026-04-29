@@ -1,6 +1,13 @@
+import type { Metadata } from "next";
 import { Section } from "@/components/marketing/section";
+import { pageMeta } from "@/lib/seo";
 
-export const metadata = { title: "Privacy" };
+export const metadata: Metadata = pageMeta({
+  title: "Privacy policy",
+  description:
+    "Privacy policy for the Scrape managed service. What we collect, what we never collect, your rights under GDPR/CCPA, and how to exercise them.",
+  path: "/privacy",
+});
 
 export default function PrivacyPage() {
   return (

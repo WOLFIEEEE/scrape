@@ -1,7 +1,14 @@
+import type { Metadata } from "next";
 import { Lock, Shield, FileCheck, Server, Globe } from "lucide-react";
 import { Section } from "@/components/marketing/section";
+import { pageMeta } from "@/lib/seo";
 
-export const metadata = { title: "Security" };
+export const metadata: Metadata = pageMeta({
+  title: "Security",
+  description:
+    "How Scrape protects customer data: SSRF defense, JWT-secured cookies, audited residential proxies only, no PII storage, and a documented vulnerability disclosure path.",
+  path: "/security",
+});
 
 const ITEMS = [
   ["Lock", Lock, "Encryption everywhere", "TLS 1.3 in transit. AES-256 at rest. HttpOnly auth cookies, SameSite=Lax, Secure flag in prod."],
