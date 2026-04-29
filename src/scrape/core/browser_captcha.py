@@ -20,6 +20,12 @@ log = get_logger(__name__)
 
 _TURNSTILE_SITEKEY = re.compile(r'data-sitekey="([0-9A-Za-z_-]+)"')
 _RECAPTCHA_SITEKEY = re.compile(r'data-sitekey="([0-9A-Za-z_-]{30,})"')
+# Page <title> patterns that mean "this is still a challenge page". Used as
+# the more reliable signal than body substring scans.
+_CHALLENGE_TITLE_RE = re.compile(
+    r"just a moment|please wait|verification|access (?:to this page )?has been denied|attention required",
+    re.IGNORECASE,
+)
 
 
 async def _find_sitekey(page: Any, pattern: re.Pattern[str]) -> str | None:
@@ -116,13 +122,14 @@ async def solve_in_browser(
         # or the post-redirect content (if the site auto-submitted on injection).
         body = (await page.content()).encode("utf-8")
         elapsed_ms = int((time.perf_counter() - start) * 1000)
-        # Detect whether the post-injection page still looks like a challenge
-        post_html = body[:65536]
-        still_challenged = (
-            b"cf-turnstile" in post_html
-            or b"challenges.cloudflare.com" in post_html
-            or b"<title>Just a moment" in post_html
-        )
+        # Use the page <title> as the challenge signal. Body-substring checks
+        # for 'cf-turnstile' false-positive on real pages whose JS bundles
+        # mention Turnstile in unrelated code (Indeed, several SaaS sites).
+        try:
+            page_title = (await page.title()) or ""
+        except Exception:
+            page_title = ""
+        still_challenged = bool(_CHALLENGE_TITLE_RE.search(page_title))
         passed = bool(token) and not still_challenged
         return FetchResult(
             url=url,
