@@ -488,6 +488,22 @@ Then:
 - **Prometheus** at http://localhost:9091 scrapes `/metrics` from the API
 - **Grafana** at http://localhost:3001 loads the provisioned Scrape dashboard. Set `GRAFANA_ADMIN_PASSWORD` before enabling the profile
 
+The metrics surface is operator-actionable:
+
+```
+scrape_fetches_total{tier,block_reason,ok}     fetch counts
+scrape_fetch_latency_seconds{tier}             latency histogram
+scrape_extracted_total{schema}                 successful extractions
+scrape_tier_escalations_total{from_tier,to_tier}
+scrape_proxy_bytes_total{tier}                 residential bandwidth (your $$$)
+scrape_solver_cost_usd_total{kind}             paid CAPTCHA spend (your $$$)
+scrape_proxy_auth_failures_total               407s — alert on rate spikes
+scrape_queue_size                              pending URLs
+scrape_active_browsers                         warm Camoufox sessions
+```
+
+Alert on `scrape_proxy_auth_failures_total` rate to catch revoked proxy plans before they burn a whole crawl. Alert on `scrape_solver_cost_usd_total` to cap runaway CAPTCHA spend.
+
 ---
 
 ## Testing & development
@@ -544,16 +560,17 @@ scrape/
 │   │   └── db.py               schema · migrations · connection pool
 │   │
 │   ├── core/                   crawler internals
-│   │   ├── http_client.py      curl_cffi pool · TLS rotation
+│   │   ├── http_client.py      curl_cffi pool · TLS rotation · proxy-byte accounting · 407 surfacing
 │   │   ├── browser_pool.py     Camoufox + behavioral simulation
-│   │   ├── browser_captcha.py  in-page CAPTCHA token injection
-│   │   ├── captcha.py          CapSolver client + protocol
-│   │   ├── unblock.py          FlareSolverrUnblock + factory
-│   │   ├── proxy_manager.py    provider abstraction · sticky sessions
+│   │   ├── browser_captcha.py  Turnstile · reCAPTCHA v3 · hCaptcha — token injection
+│   │   ├── captcha.py          CapSolver client + protocol · per-solve cost capture
+│   │   ├── unblock.py          FlareSolverr · BrightData · Scrapfly + factory
+│   │   ├── proxy_manager.py    provider abstraction · sticky sessions · 407 circuit breaker
 │   │   ├── session_store.py    cookie / storage_state per (proxy, fp, host)
 │   │   ├── rate_limiter.py     per-host concurrency + min-delay
 │   │   ├── robots.py           robots.txt cache (24h)
-│   │   ├── block_detector.py   challenge / captcha / 4xx / empty heuristics
+│   │   ├── url_guard.py        SSRF defense — block private/loopback/link-local crawl targets
+│   │   ├── block_detector.py   CF · DataDome · PerimeterX · Akamai · Incapsula · Kasada · Reddit
 │   │   └── tier_router.py      0 → 1 → 2 → 3 escalation
 │   │
 │   ├── extractors/
@@ -578,9 +595,11 @@ scrape/
 │   ├── components/             UI primitives · command palette · onboarding
 │   └── lib/api.ts              typed API client
 │
-├── tests/                      73 tests
-│   ├── unit/                   block detector · proxy manager · sessions · rate limiter
-│   │                           · extractors · storage · LLM backends · unblock
+├── tests/                      89 tests
+│   ├── unit/                   block detector (incl. Akamai · Incapsula · Kasada · Reddit interstitials)
+│   │                           · proxy manager (Generic · BrightData · IPRoyal) · session store
+│   │                           · rate limiter · robots · extractors · storage · LLM backends
+│   │                           · unblock providers · URL guard
 │   └── integration/            live HTTP + full API end-to-end
 │
 ├── scripts/verify_antibot.py   live verification harness
@@ -630,6 +649,31 @@ Set `CI_NO_NETWORK=1` to auto-skip the live-integration tests. Unit + API tests 
 <summary><strong>How do I migrate from SQLite to Postgres?</strong></summary>
 
 The interface is `scrape.pipelines.storage.Storage` — replace `aiosqlite` with `asyncpg` and keep the same `_SCHEMA` (Postgres-compatible). The data model is intentionally simple to make this swap mechanical. A migration tool is on the roadmap.
+</details>
+
+<details>
+<summary><strong>API refuses to start: "SCRAPE_JWT_SECRET must be at least 32 characters"</strong></summary>
+
+In `prod` mode the API enforces a minimum-strength JWT secret. Generate one and re-deploy:
+```bash
+SCRAPE_JWT_SECRET="$(openssl rand -hex 64)" docker compose up -d
+```
+For local HTTP demo, run in `dev` mode instead — the dev fallback secret is allowed there:
+```bash
+SCRAPE_ENV=dev SCRAPE_COOKIE_SECURE=0 docker compose up -d
+```
+</details>
+
+<details>
+<summary><strong>The crawler refuses my URL with "forbidden_host"</strong></summary>
+
+The SSRF guard in `core/url_guard.py` blocks private (RFC 1918), loopback, and link-local addresses by default. This is intentional in a multi-tenant deployment — operators don't want users scraping `http://localhost:8000` and pivoting through the API container. If you need to scrape private targets (testing on `localhost`, internal staging), set `CRAWL_ALLOW_PRIVATE_NETWORKS=true`. Don't enable this on a publicly reachable instance.
+</details>
+
+<details>
+<summary><strong>Repeated "proxy_auth_failed" warnings even after rotating sessions</strong></summary>
+
+That signals the proxy *credentials themselves* are wrong (revoked plan, mistyped password) — no amount of session rotation will help. Look at `scrape_proxy_auth_failures_total` in Prometheus; the orchestrator surfaces a `ProxyAuthBroken` exception once the threshold is crossed (default: 5 consecutive 407s) so operators get paged instead of the system silently retrying. Fix `PROXY_USERNAME` / `PROXY_PASSWORD` and restart.
 </details>
 
 ---
