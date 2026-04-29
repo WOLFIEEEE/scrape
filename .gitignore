@@ -21,3 +21,10 @@ htmlcov/
 data/
 ops/grafana_data/
 ops/redis_data/
+
+# Local tooling state (not part of the project)
+.claude/
+.cursor/
+.aider*
+.vscode/
+.idea/
