@@ -51,6 +51,8 @@ const COLOPHON_COLS = [
       { href: "/privacy", label: "Privacy", num: "i" },
       { href: "/terms", label: "Terms", num: "ii" },
       { href: "/security", label: "Security", num: "iii" },
+      { href: "/accessibility", label: "Accessibility", num: "iv" },
+      { href: "/vpat", label: "VPAT 2.5", num: "v" },
     ],
   },
 ];

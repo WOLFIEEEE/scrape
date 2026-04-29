@@ -42,8 +42,8 @@ const DOC_PAGES = [
   "/docs/legal",
 ] as const;
 
-// Indexed but not promoted heavily — legal boilerplate.
-const FOOTER_PAGES = ["/privacy", "/terms"] as const;
+// Indexed but not promoted heavily — legal boilerplate + accessibility filings.
+const FOOTER_PAGES = ["/privacy", "/terms", "/accessibility", "/vpat"] as const;
 
 // Auth-flow entry points. Useful to surface in search ("scrape login")
 // but very low priority and rarely change.
