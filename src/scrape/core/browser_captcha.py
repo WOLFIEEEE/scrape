@@ -28,77 +28,123 @@ async def _find_sitekey(page: Any, pattern: re.Pattern[str]) -> str | None:
     return m.group(1) if m else None
 
 
+# Cloudflare-published test sitekeys. Real solvers refuse these because they
+# do not correspond to a customer site — submitting them wastes balance. Skip
+# locally so we don't return a misleading "captcha solver failed" result.
+_CF_TEST_SITEKEYS = {
+    "1x00000000000000000000AA",  # always passes
+    "2x00000000000000000000AB",  # always blocks
+    "3x00000000000000000000FF",  # always interactive
+}
+
+
 async def solve_in_browser(
     browser_session: Any,
     req: FetchRequest,
     solver: CaptchaSolver,
 ) -> FetchResult:
-    """Navigate, detect challenge type, fetch token, inject, await success."""
+    """Navigate, detect challenge type, fetch token, inject, await success.
+
+    Resilient by design: solver/network failures are surfaced as a non-OK
+    FetchResult with block_reason=CAPTCHA_REQUIRED so the orchestrator can
+    escalate to Tier 3 instead of crashing the job.
+    """
     url = str(req.url)
     page = await browser_session._context.new_page()
     start = time.perf_counter()
+    token: str | None = None
+    error_note: str | None = None
     try:
         await page.goto(url, wait_until="domcontentloaded", timeout=45_000)
         # Give challenge widgets time to render
         await asyncio.sleep(2)
         html = await page.content()
 
-        token: str | None = None
-
         if "cf-turnstile" in html or "challenges.cloudflare.com" in html:
             sitekey = await _find_sitekey(page, _TURNSTILE_SITEKEY)
-            if sitekey:
+            if sitekey and sitekey in _CF_TEST_SITEKEYS:
+                log.info("captcha.skipped_test_sitekey", sitekey=sitekey)
+                error_note = f"refused-test-sitekey:{sitekey}"
+            elif sitekey:
                 log.info("captcha.found", kind="turnstile", sitekey=sitekey[:8])
-                solution = await solver.solve(SolveRequest(
-                    kind="turnstile", site_url=url, site_key=sitekey,
-                    user_agent=browser_session.profile.user_agent,
-                ))
-                token = solution.token
-                # Inject token into the hidden response field. Multiple frameworks
-                # use cf-turnstile-response; sites may also rename it.
-                await page.evaluate(
-                    """(token) => {
-                        const fields = document.querySelectorAll('[name="cf-turnstile-response"], [name="cfTurnstileResponse"]');
-                        fields.forEach(f => { f.value = token; });
-                        if (window.turnstile && typeof window.turnstile.getResponse === 'function') {
-                            try { window.turnstile.execute(); } catch(e) {}
-                        }
-                    }""",
-                    token,
-                )
-                # Many sites then auto-submit. Wait briefly for navigation.
-                with contextlib.suppress(Exception):
-                    await page.wait_for_load_state("networkidle", timeout=8_000)
+                try:
+                    solution = await solver.solve(SolveRequest(
+                        kind="turnstile", site_url=url, site_key=sitekey,
+                        user_agent=browser_session.profile.user_agent,
+                    ))
+                    token = solution.token
+                    await page.evaluate(
+                        """(token) => {
+                            const fields = document.querySelectorAll('[name="cf-turnstile-response"], [name="cfTurnstileResponse"]');
+                            fields.forEach(f => { f.value = token; });
+                            if (window.turnstile && typeof window.turnstile.getResponse === 'function') {
+                                try { window.turnstile.execute(); } catch(e) {}
+                            }
+                        }""",
+                        token,
+                    )
+                    with contextlib.suppress(Exception):
+                        await page.wait_for_load_state("networkidle", timeout=8_000)
+                except Exception as e:
+                    error_note = f"solver-error:{type(e).__name__}:{str(e)[:120]}"
+                    log.warning("captcha.solver_failed", kind="turnstile", error=error_note)
 
         elif "g-recaptcha" in html:
             sitekey = await _find_sitekey(page, _RECAPTCHA_SITEKEY)
             if sitekey:
                 log.info("captcha.found", kind="recaptcha_v3", sitekey=sitekey[:8])
-                solution = await solver.solve(SolveRequest(
-                    kind="recaptcha_v3", site_url=url, site_key=sitekey,
-                    action="verify", min_score=0.7,
-                ))
-                token = solution.token
-                await page.evaluate(
-                    """(token) => {
-                        const ta = document.querySelector('textarea[name="g-recaptcha-response"]');
-                        if (ta) ta.value = token;
-                    }""",
-                    token,
-                )
+                try:
+                    solution = await solver.solve(SolveRequest(
+                        kind="recaptcha_v3", site_url=url, site_key=sitekey,
+                        action="verify", min_score=0.7,
+                    ))
+                    token = solution.token
+                    await page.evaluate(
+                        """(token) => {
+                            const ta = document.querySelector('textarea[name="g-recaptcha-response"]');
+                            if (ta) ta.value = token;
+                        }""",
+                        token,
+                    )
+                    with contextlib.suppress(Exception):
+                        await page.wait_for_load_state("networkidle", timeout=8_000)
+                except Exception as e:
+                    error_note = f"solver-error:{type(e).__name__}:{str(e)[:120]}"
+                    log.warning("captcha.solver_failed", kind="recaptcha_v3", error=error_note)
 
+        # Final body — may be the original challenge page (if we couldn't solve)
+        # or the post-redirect content (if the site auto-submitted on injection).
         body = (await page.content()).encode("utf-8")
         elapsed_ms = int((time.perf_counter() - start) * 1000)
+        # Detect whether the post-injection page still looks like a challenge
+        post_html = body[:65536]
+        still_challenged = (
+            b"cf-turnstile" in post_html
+            or b"challenges.cloudflare.com" in post_html
+            or b"<title>Just a moment" in post_html
+        )
+        passed = bool(token) and not still_challenged
         return FetchResult(
             url=url,
             final_url=page.url,
-            status=200 if token else 403,
+            status=200 if passed else 403,
             body=body,
             elapsed_ms=elapsed_ms,
             tier_used=Tier.CAPTCHA,
             proxy_used=browser_session._proxy_url,
             fingerprint_id=browser_session.profile.name,
-            block_reason=BlockReason.NONE if token else BlockReason.CAPTCHA_REQUIRED,
+            block_reason=BlockReason.NONE if passed else BlockReason.CAPTCHA_REQUIRED,
+            headers={"x-scrape-captcha-note": error_note} if error_note else {},
+        )
+    except Exception as e:
+        elapsed_ms = int((time.perf_counter() - start) * 1000)
+        log.warning("captcha.flow_failed", url=url, error=str(e)[:200])
+        return FetchResult(
+            url=url, final_url=url, status=0, body=b"",
+            elapsed_ms=elapsed_ms, tier_used=Tier.CAPTCHA,
+            proxy_used=browser_session._proxy_url,
+            fingerprint_id=browser_session.profile.name,
+            block_reason=BlockReason.NETWORK,
         )
     finally:
         with contextlib.suppress(Exception):

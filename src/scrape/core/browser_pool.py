@@ -201,6 +201,18 @@ class BrowserSession:
                     "name": k, "value": v, "url": url,
                 }])
             response = await page.goto(url, wait_until=wait_until, timeout=45_000)
+            # Cloudflare's "Just a moment" interstitial passes itself once enough
+            # JS executes — the browser already passes the behavioral score with
+            # Camoufox + humanize, we just need to wait for the redirect. Poll
+            # the title for up to 15s; bail early once the challenge is gone.
+            for _ in range(30):
+                try:
+                    title = await page.title()
+                except Exception:
+                    break
+                if "Just a moment" not in title and "verification" not in title.lower():
+                    break
+                await asyncio.sleep(0.5)
             if self._humanize:
                 await _human_mouse_dance(page, self._profile)
                 await _human_scroll(page, distance=random.randint(500, 1800))
