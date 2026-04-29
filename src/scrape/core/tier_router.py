@@ -96,10 +96,16 @@ class TierRouter:
                 )
 
         # --- Tier 1: Browser -----------------------------------------------
-        # Was Tier 1 stuck on a JS-only challenge with no widget to inject?
-        # We track this so we can skip Tier 2 (same browser approach, would
-        # also stall) and go straight to Tier 3 — saves 60-90s per stuck URL.
+        # We capture both the post-Tier-1 block_reason and an explicit "stuck"
+        # flag so the Tier-2 gate below can decide whether token injection has
+        # any chance of helping. If Tier 1 came back 4xx/5xx (WAF outright
+        # block, no widget present) or got stuck on a JS-only challenge
+        # (widget rendered but Camoufox couldn't clear it), Tier 2 will run
+        # the same browser navigation against the same blocked page — pure
+        # waste. Skip straight to Tier 3, which uses a different browser
+        # stack and can succeed where ours can't.
         tier1_stuck = False
+        tier1_block: BlockReason | None = None
         if req.max_tier >= Tier.BROWSER and (
             req.tier <= Tier.BROWSER or needs_browser(BlockReason.CHALLENGE_PAGE)
         ):
@@ -114,6 +120,7 @@ class TierRouter:
                     result.block_reason = detect(result)
                     self._proxies.report(proxy_session, result.ok)
                     tier1_stuck = result.headers.get("x-scrape-tier1-stuck") == "1"
+                    tier1_block = result.block_reason
                     if result.ok or req.max_tier == Tier.BROWSER:
                         try:
                             self._sessions.update_storage_state(sess, await bsess.storage_state())
@@ -121,20 +128,32 @@ class TierRouter:
                         except Exception as e:
                             log.warning("session.storage_state_failed", error=str(e))
                         return result
+                    skip_t2 = (
+                        tier1_stuck
+                        or tier1_block in (BlockReason.STATUS_4XX, BlockReason.STATUS_5XX, BlockReason.RATE_LIMITED)
+                    )
                     log.info(
                         "tier.escalate",
                         url=url, from_tier=int(Tier.BROWSER),
                         reason=result.block_reason.value,
-                        skip_to_tier3=tier1_stuck,
+                        skip_to_tier3=skip_t2,
                     )
 
         # --- Tier 2: Browser + CAPTCHA solver ------------------------------
-        # Skip Tier 2 entirely when Tier 1 reported `stuck` — token injection
-        # uses the same Camoufox session that just failed to clear the
-        # challenge. Tier 3 (FlareSolverr / commercial unblock) uses a
-        # different browser stack and can succeed.
+        # Tier 2 only adds value when Tier 1 actually rendered a solvable
+        # widget. We skip when:
+        #   - Tier 1 stuck on a challenge that didn't clear (no widget to inject)
+        #   - Tier 1 returned 4xx/5xx (WAF block — no page to inject into)
+        #   - Tier 1 returned RATE_LIMITED (Tier 2 navigation will hit the same)
+        # All those cases waste a full browser navigation in Tier 2 and end
+        # up at Tier 3 anyway. Jumping straight saves 60-120s per URL.
+        skip_tier2 = tier1_stuck or tier1_block in (
+            BlockReason.STATUS_4XX,
+            BlockReason.STATUS_5XX,
+            BlockReason.RATE_LIMITED,
+        )
         if (
-            not tier1_stuck
+            not skip_tier2
             and req.max_tier >= Tier.CAPTCHA
             and self._captcha is not None
             and self._browser is not None
