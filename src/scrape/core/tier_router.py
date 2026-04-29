@@ -96,6 +96,10 @@ class TierRouter:
                 )
 
         # --- Tier 1: Browser -----------------------------------------------
+        # Was Tier 1 stuck on a JS-only challenge with no widget to inject?
+        # We track this so we can skip Tier 2 (same browser approach, would
+        # also stall) and go straight to Tier 3 — saves 60-90s per stuck URL.
+        tier1_stuck = False
         if req.max_tier >= Tier.BROWSER and (
             req.tier <= Tier.BROWSER or needs_browser(BlockReason.CHALLENGE_PAGE)
         ):
@@ -109,6 +113,7 @@ class TierRouter:
                     result = await bsess.fetch(req)
                     result.block_reason = detect(result)
                     self._proxies.report(proxy_session, result.ok)
+                    tier1_stuck = result.headers.get("x-scrape-tier1-stuck") == "1"
                     if result.ok or req.max_tier == Tier.BROWSER:
                         try:
                             self._sessions.update_storage_state(sess, await bsess.storage_state())
@@ -120,11 +125,17 @@ class TierRouter:
                         "tier.escalate",
                         url=url, from_tier=int(Tier.BROWSER),
                         reason=result.block_reason.value,
+                        skip_to_tier3=tier1_stuck,
                     )
 
         # --- Tier 2: Browser + CAPTCHA solver ------------------------------
+        # Skip Tier 2 entirely when Tier 1 reported `stuck` — token injection
+        # uses the same Camoufox session that just failed to clear the
+        # challenge. Tier 3 (FlareSolverr / commercial unblock) uses a
+        # different browser stack and can succeed.
         if (
-            req.max_tier >= Tier.CAPTCHA
+            not tier1_stuck
+            and req.max_tier >= Tier.CAPTCHA
             and self._captcha is not None
             and self._browser is not None
             and camoufox_available()

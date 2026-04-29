@@ -205,6 +205,7 @@ class BrowserSession:
             # JS executes — the browser already passes the behavioral score with
             # Camoufox + humanize, we just need to wait for the redirect. Poll
             # the title for up to 15s; bail early once the challenge is gone.
+            stuck_on_challenge = False
             for _ in range(30):
                 try:
                     title = await page.title()
@@ -213,7 +214,14 @@ class BrowserSession:
                 if "Just a moment" not in title and "verification" not in title.lower():
                     break
                 await asyncio.sleep(0.5)
-            if self._humanize:
+            else:
+                # Loop exhausted without the title clearing — Tier 1 will not
+                # solve this. Set a hint so the router skips Tier 2 (which uses
+                # the same browser approach) and goes straight to Tier 3.
+                stuck_on_challenge = True
+            if self._humanize and not stuck_on_challenge:
+                # No point humanizing a page that's already declared stuck —
+                # save 5-15s of mouse/scroll work that won't change the outcome.
                 await _human_mouse_dance(page, self._profile)
                 await _human_scroll(page, distance=random.randint(500, 1800))
             body_str = await page.content()
@@ -221,6 +229,10 @@ class BrowserSession:
             elapsed_ms = int((time.perf_counter() - start) * 1000)
             status = response.status if response else 0
             headers = dict(response.headers) if response else {}
+            if stuck_on_challenge:
+                # Hint read by tier_router to skip Tier 2 — token injection
+                # cannot solve a page whose challenge widget never resolved.
+                headers["x-scrape-tier1-stuck"] = "1"
             final_url = page.url
             # Approximate browser proxy traffic. Playwright doesn't expose the
             # raw byte counter, so we use the rendered HTML as a floor; real
