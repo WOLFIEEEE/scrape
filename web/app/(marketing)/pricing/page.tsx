@@ -90,6 +90,7 @@ const FAQ = [
   ["What counts as a fetch?", "One HTTP request that reaches the upstream, regardless of whether the body is parsed. Retries that result in successful escalation count as one logical fetch — the highest-stratum attempt is metered."],
   ["Can I really self-host?", "Yes. Every line of code that runs in our managed cloud is in the open-source repo. docker compose up brings the full stack on your own box."],
   ["How do you charge for proxies and CAPTCHA?", "Free tier requires you to bring your own provider keys. Pro/Scale plans include a fair-use bundle and let you top up on a metered basis at provider cost + 10%."],
+  ["Can I see exactly what each fetch cost?", "Yes — every fetch row records proxy_bytes (residential bandwidth) and solver_cost_usd (paid CAPTCHA spend). The dashboard shows totals per job, and Prometheus exports the running totals as scrape_proxy_bytes_total and scrape_solver_cost_usd_total. No surprise invoice."],
   ["Do you do enterprise contracts?", "Yes — annual commitment, dedicated cluster, custom IP pools, on-prem deployment, SOC-2-bound DPA. Reach the bureau from the Scale tier."],
 ];
 

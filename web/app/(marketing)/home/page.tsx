@@ -331,6 +331,7 @@ export default function HomePage() {
                 "Webhooks on completion (HMAC signed)",
                 "Per-job extraction schemas",
                 "JSON, CSV, NDJSON exports",
+                "Per-fetch cost telemetry — proxy bytes & solver $",
               ].map((p) => (
                 <li key={p} className="flex items-start gap-3 text-muted">
                   <span className="text-rust mt-1.5">→</span>
@@ -368,6 +369,54 @@ job = client.jobs.create(
 for row in client.jobs.stream(job.id):
     print(row.url, row.data["price"])`}
           />
+        </div>
+      </Section>
+
+      {/* ===== Cost transparency ===== */}
+      <Section className="py-24">
+        <SectionRule label="§ 04½ · COST LEDGER" />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
+          <div className="lg:col-span-5">
+            <h2 className="display text-5xl md:text-6xl">
+              You see <span className="text-rust">every penny.</span>
+            </h2>
+            <p className="mt-6 text-muted leading-relaxed max-w-md">
+              Every fetch records what it actually cost: residential proxy
+              bytes plus paid CAPTCHA solver USD. Per row in storage, per tier
+              in Prometheus, per job in the dashboard. No surprise invoice.
+            </p>
+            <p className="mt-6 text-sm text-muted">
+              <code className="font-mono text-rust">scrape_proxy_bytes_total</code>
+              <br />
+              <code className="font-mono text-rust">scrape_solver_cost_usd_total</code>
+            </p>
+          </div>
+          <div className="lg:col-span-7 border border-line">
+            <div className="grid grid-cols-12 px-5 py-3 small-caps text-muted border-b border-line bg-bg-2/40">
+              <div className="col-span-3">Tier</div>
+              <div className="col-span-3">Wall time</div>
+              <div className="col-span-3">Proxy traffic</div>
+              <div className="col-span-3">USD / page</div>
+            </div>
+            {[
+              ["00 · Surface", "~50 ms", "~80 KB", "~$0.0001"],
+              ["01 · Browser", "60–90 s", "~5 MB", "$0.002–$0.02"],
+              ["02 · CAPTCHA", "+3–10 s", "+0", "$0.001–$0.003"],
+              ["03 · FlareSolverr", "60–120 s", "0 (own browser)", "$0"],
+              ["03 · Bright Data", "5–30 s", "0 (own farm)", "~$0.003"],
+              ["03 · Scrapfly", "5–30 s", "0 (own farm)", "$0.001–$0.025"],
+            ].map(([tier, wall, traffic, cost], i) => (
+              <div
+                key={String(tier)}
+                className={`grid grid-cols-12 px-5 py-3 text-sm ${i < 5 ? "border-b border-line" : ""}`}
+              >
+                <div className="col-span-3 display-up">{tier}</div>
+                <div className="col-span-3 text-muted">{wall}</div>
+                <div className="col-span-3 text-muted">{traffic}</div>
+                <div className="col-span-3 text-rust num">{cost}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </Section>
 

@@ -32,6 +32,45 @@ export default function Page() {
       <DocSection title="Forcing a starting tier">
         <p>If you know a target needs a browser, set the request's <code>tier</code> field to skip the wasted Tier 0 attempt. The router still escalates if the browser tier itself blocks.</p>
       </DocSection>
+
+      <DocSection title="Choosing a Tier-3 unblock provider">
+        <p>Tier 3 is the last-resort fallback when Tier 0–2 can&apos;t get through. Three providers ship under the same <code>UnblockProvider</code> protocol; pick the one that matches your targets.</p>
+        <table>
+          <thead>
+            <tr><th>Provider</th><th>Cost</th><th>Beats</th><th>Doesn&apos;t beat</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>flaresolverr</code></td>
+              <td>Free, self-hosted (Docker)</td>
+              <td>Plain Cloudflare JS challenges (Managed Challenge, &quot;Just a moment&quot;)</td>
+              <td>Behavioral scoring (PerimeterX, advanced Akamai, Kasada)</td>
+            </tr>
+            <tr>
+              <td><code>brightdata</code></td>
+              <td>~$3 per 1,000 successful requests</td>
+              <td>CF, Akamai, PerimeterX, Kasada — runs a real-browser farm</td>
+              <td>Sites that explicitly block Bright Data IP ranges</td>
+            </tr>
+            <tr>
+              <td><code>scrapfly</code></td>
+              <td>~$0.001–$0.025 per request (credits)</td>
+              <td>CF, Akamai, PerimeterX with ASP enabled</td>
+              <td>Same gaps as Bright Data; pricing scales with render mode</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>Set the provider via <code>UNBLOCK_PROVIDER=flaresolverr|brightdata|scrapfly</code>. Commercial providers refuse to start without their API key (<code>BRIGHTDATA_API_KEY</code> / <code>SCRAPFLY_API_KEY</code>); the orchestrator logs <code>unblock.brightdata_missing_key</code> and falls back to no Tier 3 rather than silently swallow the request.</p>
+      </DocSection>
+
+      <DocSection title="Honest limits">
+        <p>Some block patterns can&apos;t be solved by any tier we ship today:</p>
+        <ul>
+          <li>WAF outright blocks (no challenge served, just 403 + a 2 KB explanation page) — typically need a different IP range; Tier 3 commercial unblockers help here.</li>
+          <li>Site-specific JS interstitials with no public sitekey — our regex auto-detector misses these; use <a href="/docs/captcha">the per-target solver hint</a>.</li>
+          <li>Fingerprint-pinned APIs that require a paid app token — out of scope; integrate the official API instead.</li>
+        </ul>
+      </DocSection>
     </DocShell>
   );
 }
