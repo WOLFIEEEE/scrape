@@ -25,6 +25,7 @@ class BlockReason(StrEnum):
     TIMEOUT = "timeout"
     NETWORK = "network"
     RATE_LIMITED = "rate_limited"
+    FORBIDDEN_HOST = "forbidden_host"
 
 
 class FetchRequest(BaseModel):

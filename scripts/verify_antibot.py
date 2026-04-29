@@ -24,9 +24,6 @@ from rich.table import Table
 from scrape.core.block_detector import (
     BlockReason,
     detect,
-    needs_browser,
-    needs_captcha,
-    needs_unblock_api,
 )
 from scrape.core.http_client import HttpClient
 from scrape.models import FetchRequest
@@ -117,8 +114,8 @@ async def main() -> None:
                 decision,
                 note,
             )
-        except Exception as e:  # noqa: BLE001
-            table.add_row(name, f"[red]error[/red]", "-", "-", "-", "—", f"{type(e).__name__}: {e!s}")
+        except Exception as e:
+            table.add_row(name, "[red]error[/red]", "-", "-", "-", "—", f"{type(e).__name__}: {e!s}")
 
     console.print(table)
     console.print()

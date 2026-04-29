@@ -6,6 +6,7 @@ from prometheus_client import Counter, Gauge, Histogram, start_http_server
 from scrape.logging import get_logger
 
 log = get_logger(__name__)
+_started_ports: set[int] = set()
 
 FETCHES_TOTAL = Counter(
     "scrape_fetches_total",
@@ -33,8 +34,11 @@ ACTIVE_BROWSERS = Gauge("scrape_active_browsers", "Open browser sessions")
 
 
 def start_metrics_server(port: int) -> None:
+    if port in _started_ports:
+        return
     try:
         start_http_server(port)
+        _started_ports.add(port)
         log.info("metrics.started", port=port)
     except OSError as e:
         log.warning("metrics.bind_failed", port=port, error=str(e))

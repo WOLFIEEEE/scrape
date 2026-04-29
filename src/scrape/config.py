@@ -85,6 +85,7 @@ class CrawlerConfig(BaseSettings):
     max_retries: int = 3
     user_warmup: bool = False  # warm cookies on neutral site before target
     respect_robots: bool = True
+    allow_private_networks: bool = False
 
 
 class Settings(BaseSettings):
@@ -95,7 +96,12 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("SCRAPE_ENV", "ENV"),
     )
     log_level: str = "INFO"
-    metrics_port: int = Field(default=9090, ge=1, le=65535)
+    metrics_port: int = Field(
+        default=9090,
+        ge=0,
+        le=65535,
+        validation_alias=AliasChoices("SCRAPE_METRICS_PORT", "METRICS_PORT"),
+    )
     jwt_secret: str = Field(default="", validation_alias="SCRAPE_JWT_SECRET")
     cookie_secure: bool = Field(default=False, validation_alias="SCRAPE_COOKIE_SECURE")
     cors_origins: str = Field(

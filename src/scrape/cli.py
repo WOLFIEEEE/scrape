@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
-import yaml
+import yaml  # type: ignore[import-untyped]
 from rich.console import Console
 from rich.table import Table
 
@@ -29,7 +29,11 @@ def _read_urls(source: str | None, urls: list[str]) -> list[str]:
         text = Path(source).read_text() if source != "-" else sys.stdin.read()
         out.extend(line.strip() for line in text.splitlines() if line.strip() and not line.startswith("#"))
     seen: set[str] = set()
-    deduped = [u for u in out if not (u in seen or seen.add(u))]
+    deduped: list[str] = []
+    for url in out:
+        if url not in seen:
+            seen.add(url)
+            deduped.append(url)
     return deduped
 
 

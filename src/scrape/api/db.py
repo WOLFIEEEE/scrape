@@ -9,6 +9,7 @@ straightforward, and the existing `pipelines/storage.py` uses raw SQL too.
 from __future__ import annotations
 
 import secrets
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -156,7 +157,7 @@ async def init_db() -> None:
 
 
 @asynccontextmanager
-async def connect() -> aiosqlite.Connection:
+async def connect() -> AsyncIterator[aiosqlite.Connection]:
     cfg = get_settings()
     db = await aiosqlite.connect(cfg.storage.sqlite_path)
     db.row_factory = aiosqlite.Row

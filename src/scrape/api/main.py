@@ -14,16 +14,20 @@ from scrape.api.db import init_db
 from scrape.api.jobs_routes import router as jobs_router
 from scrape.config import get_settings
 from scrape.logging import get_logger, setup_logging
+from scrape.pipelines.metrics import start_metrics_server
 
 log = get_logger("api")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_logging(get_settings().log_level)
+    settings = get_settings()
+    setup_logging(settings.log_level)
+    if settings.metrics_port:
+        start_metrics_server(settings.metrics_port)
     await init_db()
-    await job_runner.reset_orphan_running()
-    log.info("api.startup", db=str(get_settings().storage.sqlite_path))
+    await job_runner.recover_interrupted_jobs()
+    log.info("api.startup", db=str(settings.storage.sqlite_path))
     yield
     log.info("api.shutdown")
 
@@ -32,8 +36,8 @@ def create_app() -> FastAPI:
     settings = get_settings()
     # Refuse to start in prod without an explicit secret — defends against
     # the dev-fallback cookie key getting reused in real deployments.
-    if settings.env == "prod" and not settings.jwt_secret:
-        raise RuntimeError("SCRAPE_JWT_SECRET must be set when SCRAPE_ENV=prod")
+    if settings.env == "prod" and len(settings.jwt_secret) < 32:
+        raise RuntimeError("SCRAPE_JWT_SECRET must be at least 32 characters when SCRAPE_ENV=prod")
 
     app = FastAPI(
         title="Scrape API",

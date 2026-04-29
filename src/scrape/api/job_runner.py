@@ -1,7 +1,7 @@
 """Background job runner — drives the existing Orchestrator and updates job rows.
 
-One asyncio Task per job. Tasks live in-process for the API; if the API process
-restarts, jobs in 'running' status are marked failed at startup (see main.py).
+One asyncio Task per job. Tasks live in-process for the API; on startup, pending
+jobs are resubmitted and jobs that were mid-flight are marked failed.
 """
 from __future__ import annotations
 
@@ -169,13 +169,26 @@ async def _emit_webhook(job_id: str, event: str) -> None:
         log.warning("webhook.dispatch_failed", job_id=job_id, error=str(e))
 
 
-async def reset_orphan_running() -> None:
-    """At API startup, mark any 'running' jobs as failed — they died with the
-    previous process. Not perfect, but better than leaving them hanging."""
+async def recover_interrupted_jobs() -> None:
+    """Recover DB-backed jobs after an API restart.
+
+    Pending jobs have not started yet, so resubmit them. Running jobs died with
+    the previous process and may have partial fetch rows, so mark them failed
+    instead of replaying side effects silently.
+    """
     async with connect() as db:
         await db.execute(
             "UPDATE jobs SET status = 'failed', error = 'process restart',"
-            " finished_at = ? WHERE status IN ('running','pending')",
+            " finished_at = ? WHERE status = 'running'",
             (now_iso(),),
         )
+        cur = await db.execute("SELECT id FROM jobs WHERE status = 'pending'")
+        pending = [str(row["id"]) for row in await cur.fetchall()]
         await db.commit()
+
+    for job_id in pending:
+        submit(job_id)
+
+
+# Backwards-compatible alias for older imports.
+reset_orphan_running = recover_interrupted_jobs

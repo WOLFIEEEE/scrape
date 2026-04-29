@@ -15,7 +15,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-c14a1a.svg)](LICENSE)
 [![Python: 3.12+](https://img.shields.io/badge/python-3.12%2B-0a0908.svg)](https://www.python.org/)
 [![Next.js: 15](https://img.shields.io/badge/next.js-15-0a0908.svg)](https://nextjs.org/)
-[![Tests: 61 passing](https://img.shields.io/badge/tests-61_passing-a3ff12.svg)](#testing--development)
+[![Tests: 73 passing](https://img.shields.io/badge/tests-73_passing-a3ff12.svg)](#testing--development)
 [![Docker compose: ready](https://img.shields.io/badge/docker_compose-ready-a3ff12.svg)](#1-docker-compose-recommended)
 
 [Quickstart](#quickstart) · [Architecture](#architecture) · [API](#rest-api) · [CLI](#cli) · [Configuration](#configuration) · [Self-hosting](#self-hosted-zero-paid-services) · [Production](#production-deployment)
@@ -88,7 +88,7 @@ Five out of eight protected targets pass at the cheapest tier. The other three a
 | 📊  | **Observability**        | Prometheus metrics · Grafana dashboards · structured JSON logs   |
 | ⚖   | **Ethical defaults**     | robots.txt enforced · per-host rate limiting · audited proxies only |
 | 🐳  | **Container-native**     | One-command `docker compose up` brings the whole stack online   |
-| 🧪  | **Tests**                | 61 passing — unit · live integration · API end-to-end           |
+| 🧪  | **Tests**                | 73 passing — unit · live integration · API end-to-end           |
 
 ---
 
@@ -96,12 +96,12 @@ Five out of eight protected targets pass at the cheapest tier. The other three a
 
 ### 1. Docker Compose (recommended)
 
-The shipped `docker-compose.yaml` wires every internal service URL with sensible defaults — no `.env` required.
+The shipped `docker-compose.yaml` wires every internal service URL. For a local HTTP demo, run in `dev` mode so browser cookies are not marked `Secure`:
 
 ```bash
 git clone https://github.com/WOLFIEEEE/scrape.git
 cd scrape
-docker compose up -d
+SCRAPE_ENV=dev SCRAPE_COOKIE_SECURE=0 docker compose up -d
 ```
 
 That's it. Open **http://localhost:3000** → register the first user (auto-promoted to admin) → click **New job** → paste any URLs → watch live progress in the dashboard.
@@ -126,10 +126,11 @@ The Ollama container auto-pulls `qwen2.5:7b` on first boot (~5 GB).
 To add **Prometheus + Grafana**:
 
 ```bash
+GRAFANA_ADMIN_PASSWORD="$(openssl rand -hex 24)" \
 docker compose --profile observability up -d
 ```
 
-Visit Grafana at http://localhost:3001 (admin / admin).
+Visit Grafana at http://localhost:3001 with user `admin` and your generated password.
 
 ### 2. Local development
 
@@ -225,13 +226,14 @@ Every setting is an environment variable. Defaults are sensible for local dev. C
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SCRAPE_ENV`              | `dev`            | `dev` or `prod`. Prod refuses to start without `SCRAPE_JWT_SECRET` |
-| `SCRAPE_JWT_SECRET`       | dev fallback     | HS256 secret signing auth cookies |
-| `SCRAPE_COOKIE_SECURE`    | `0`              | Set `1` behind HTTPS |
+| `SCRAPE_ENV`              | `dev` app / `prod` compose | `dev` or `prod`. Prod refuses to start without a strong `SCRAPE_JWT_SECRET` |
+| `SCRAPE_JWT_SECRET`       | dev fallback     | HS256 secret signing auth cookies. Required in prod, minimum 32 characters |
+| `SCRAPE_COOKIE_SECURE`    | `0` app / `1` compose | Secure cookies behind HTTPS |
 | `SCRAPE_CORS_ORIGINS`     | localhost:3000   | Comma-separated allowed origins |
 | `SCRAPE_PUBLIC_URL`       | localhost:3000   | Used by the marketing site for OG / canonical URLs |
 | `SCRAPE_TRUST_PROXY_HEADERS` | `1` in compose | Trust `X-Forwarded-For` from a reverse proxy |
 | `SCRAPE_API_URL`          | `http://api:8000`| Used by Next.js to proxy `/api/*` to the FastAPI service |
+| `SCRAPE_METRICS_PORT`     | `9090`           | Prometheus metrics listener. Set `0` to disable |
 
 ### LLM extraction
 
@@ -278,6 +280,7 @@ Every setting is an environment variable. Defaults are sensible for local dev. C
 | `CRAWL_PER_HOST_MIN_DELAY_MS`  | `500` | Spacing between requests to the same host |
 | `CRAWL_REQUEST_TIMEOUT_S`      | `30`  | Per-fetch timeout |
 | `CRAWL_RESPECT_ROBOTS`         | `true`| Honor `robots.txt` (24h cache) |
+| `CRAWL_ALLOW_PRIVATE_NETWORKS` | `false` | Allow private/loopback/link-local crawl targets. Keep false for public deployments |
 
 ### Compose-only port overrides
 
@@ -418,7 +421,7 @@ SCRAPE_CORS_ORIGINS=https://your-domain.com \
 docker compose up -d
 ```
 
-The API refuses to start in `prod` mode without a real `SCRAPE_JWT_SECRET`, so a misconfigured deploy fails loudly rather than silently signing tokens with the dev fallback.
+The API refuses to start in `prod` mode without a `SCRAPE_JWT_SECRET` of at least 32 characters, so a misconfigured deploy fails loudly rather than silently signing tokens with the dev fallback.
 
 ### Reverse proxy (Caddy example)
 
@@ -453,7 +456,7 @@ docker compose --profile observability up -d
 Then:
 
 - **Prometheus** at http://localhost:9091 scrapes `/metrics` from the API
-- **Grafana** at http://localhost:3001 (admin / admin) loads a starter dashboard with per-tier success rate, latency histograms, queue depth, and active browsers
+- **Grafana** at http://localhost:3001 loads the provisioned Scrape dashboard. Set `GRAFANA_ADMIN_PASSWORD` before enabling the profile
 
 ---
 
@@ -461,7 +464,7 @@ Then:
 
 ```bash
 # Backend
-uv run pytest                  # 61 tests · unit + live + API e2e
+uv run pytest                  # 73 tests · unit + live + API e2e
 uv run ruff check src tests    # lint
 uv run scripts/verify_antibot.py   # live anti-bot verification
 
@@ -477,7 +480,7 @@ The test suite uses [`pytest-asyncio`](https://pytest-asyncio.readthedocs.io/) i
 ### Repository hygiene at HEAD
 
 ```
-✓ 61 / 61   Python tests passing
+✓ 73 / 73   Python tests passing
 ✓ 0         ruff errors
 ✓ 0         ESLint errors
 ✓ 0         TypeScript errors
@@ -545,7 +548,7 @@ scrape/
 │   ├── components/             UI primitives · command palette · onboarding
 │   └── lib/api.ts              typed API client
 │
-├── tests/                      61 tests
+├── tests/                      73 tests
 │   ├── unit/                   block detector · proxy manager · sessions · rate limiter
 │   │                           · extractors · storage · LLM backends · unblock
 │   └── integration/            live HTTP + full API end-to-end

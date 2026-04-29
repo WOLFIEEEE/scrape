@@ -10,9 +10,9 @@ from __future__ import annotations
 import random
 import time
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, cast
 
-from curl_cffi.requests import AsyncSession, BrowserType
+from curl_cffi.requests import AsyncSession
 from curl_cffi.requests.exceptions import RequestException, Timeout
 
 from scrape.logging import get_logger
@@ -23,7 +23,7 @@ log = get_logger(__name__)
 # Curated rotation pool — recent stable browsers that curl-impersonate supports
 # in 0.15.x. Mixing major versions across requests breaks naive fingerprint
 # clustering done by WAFs that bucket by static JA3 hash.
-_DEFAULT_IMPERSONATE_POOL: tuple[BrowserType, ...] = (
+_DEFAULT_IMPERSONATE_POOL: tuple[str, ...] = (
     "chrome131",
     "chrome124",
     "chrome120",
@@ -57,7 +57,7 @@ class HttpClient:
     def __init__(
         self,
         proxy: str | None = None,
-        impersonate_pool: Iterable[BrowserType] = _DEFAULT_IMPERSONATE_POOL,
+        impersonate_pool: Iterable[str] = _DEFAULT_IMPERSONATE_POOL,
         timeout_s: int = 30,
         accept_language: str = "en-US,en;q=0.9",
         extra_headers: dict[str, str] | None = None,
@@ -71,11 +71,11 @@ class HttpClient:
             self._headers.update(extra_headers)
         # Pin the impersonation per-instance so cookie jar + TLS fp stay coherent.
         # Anti-bots correlate cookies to TLS fp; switching mid-session is a giveaway.
-        self._impersonate: BrowserType = random.choice(self._pool)
+        self._impersonate: str = random.choice(self._pool)
         self._session: AsyncSession | None = None
 
     @property
-    def impersonate(self) -> BrowserType:
+    def impersonate(self) -> str:
         return self._impersonate
 
     @property
@@ -84,7 +84,7 @@ class HttpClient:
 
     async def __aenter__(self) -> HttpClient:
         self._session = AsyncSession(
-            impersonate=self._impersonate,
+            impersonate=cast(Any, self._impersonate),
             headers=self._headers,
             timeout=self._timeout_s,
             proxy=self._proxy,
@@ -121,7 +121,7 @@ class HttpClient:
         start = time.perf_counter()
         try:
             resp = await self._session.request(
-                req.method,
+                cast(Any, req.method),
                 url,
                 headers=merged_headers,
                 data=req.body,

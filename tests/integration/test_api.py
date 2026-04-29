@@ -23,6 +23,12 @@ def client(tmp_path: Path, monkeypatch):
     cfg_mod._settings = None
     from scrape.api import rate_limit
     rate_limit._buckets.clear()
+    from scrape.core import url_guard
+
+    async def _fake_resolve(host: str, port: int | None) -> set[str]:
+        return {"93.184.216.34"}
+
+    monkeypatch.setattr(url_guard, "_resolve_host", _fake_resolve)
     from scrape.api.main import create_app
     app = create_app()
     with TestClient(app) as c:
@@ -39,6 +45,24 @@ def authed_client(client):
 def test_health(client):
     r = client.get("/api/health")
     assert r.status_code == 200 and r.json()["status"] == "ok"
+
+
+def test_prod_requires_strong_jwt_secret(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("STORAGE_SQLITE_PATH", str(tmp_path / "test.db"))
+    monkeypatch.setenv("STORAGE_RAW_HTML_DIR", str(tmp_path / "raw"))
+    monkeypatch.setenv("SCRAPE_ENV", "dev")
+    monkeypatch.setenv("SCRAPE_JWT_SECRET", "test-secret-32-chars-min-aaaaaaaaaa")
+    from scrape import config as cfg_mod
+
+    cfg_mod._settings = None
+    from scrape.api import main as main_mod
+
+    monkeypatch.setenv("SCRAPE_ENV", "prod")
+    monkeypatch.setenv("SCRAPE_JWT_SECRET", "too-short")
+    cfg_mod._settings = None
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
+        main_mod.create_app()
+    cfg_mod._settings = None
 
 
 def test_register_login_me_logout(client):
@@ -187,6 +211,14 @@ def test_webhook_crud(authed_client):
     assert r.json() == []
 
 
+def test_webhook_private_url_rejected(authed_client):
+    r = authed_client.post(
+        "/api/webhooks",
+        json={"url": "http://127.0.0.1:8000/hook", "events": ["job.completed"]},
+    )
+    assert r.status_code == 400
+
+
 def test_jobs_listing_isolated(client):
     client.post("/api/auth/register", json={"email": "u1@example.com", "password": "passpass"})
     r = client.post("/api/jobs", json={
@@ -207,6 +239,14 @@ def test_jobs_listing_isolated(client):
 
     r = client.get(f"/api/jobs/{job_id}")
     assert r.status_code == 404
+
+
+def test_job_private_url_rejected(authed_client):
+    r = authed_client.post("/api/jobs", json={
+        "name": "unsafe", "urls": ["http://127.0.0.1:8000/private"],
+        "max_tier": 0, "use_browser": False, "use_llm": False,
+    })
+    assert r.status_code == 400
 
 
 def test_quota_blocks_huge_job(authed_client, monkeypatch):

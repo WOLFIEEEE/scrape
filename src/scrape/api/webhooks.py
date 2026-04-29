@@ -11,6 +11,8 @@ from typing import Any
 import httpx
 
 from scrape.api.db import connect, now_iso
+from scrape.config import get_settings
+from scrape.core.url_guard import UnsafeUrlError, validate_public_http_url
 from scrape.logging import get_logger
 
 log = get_logger(__name__)
@@ -49,7 +51,7 @@ async def fire(event: str, user_id: int, payload: dict[str, Any]) -> None:
                 (t["id"], event, body.decode(), now_iso()),
             )
             await db.commit()
-            delivery_id = cur.lastrowid
+            delivery_id = int(cur.lastrowid or 0)
         _schedule_delivery(delivery_id, t["url"], t["secret"], body, t["id"])
 
 
@@ -67,6 +69,10 @@ async def _deliver(delivery_id: int, url: str, secret: str, body: bytes, webhook
             "X-Scrape-Signature": f"t={ts},v1={sig}",
         }
         try:
+            await validate_public_http_url(
+                url,
+                allow_private=get_settings().crawler.allow_private_networks,
+            )
             async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
                 resp = await client.post(url, content=body, headers=headers)
             last_status = resp.status_code
@@ -85,6 +91,21 @@ async def _deliver(delivery_id: int, url: str, secret: str, body: bytes, webhook
                 log.info("webhook.delivered", id=delivery_id, status=last_status, attempt=attempt + 1)
                 return
             last_error = f"HTTP {resp.status_code}"
+        except UnsafeUrlError as e:
+            last_error = f"unsafe webhook URL: {e}"
+            async with connect() as db:
+                await db.execute(
+                    """UPDATE webhook_deliveries
+                       SET status = ?, error = ?, attempts = ? WHERE id = ?""",
+                    (last_status, last_error, attempt + 1, delivery_id),
+                )
+                await db.execute(
+                    "UPDATE webhooks SET last_status = ?, last_attempt_at = ? WHERE id = ?",
+                    (last_status, now_iso(), webhook_id),
+                )
+                await db.commit()
+            log.warning("webhook.blocked", id=delivery_id, error=last_error)
+            return
         except Exception as e:
             last_error = str(e)[:200]
         async with connect() as db:

@@ -25,6 +25,8 @@ from scrape.api.schemas import (
     UserOut,
 )
 from scrape.api.usage import concurrent_running, current_usage
+from scrape.config import get_settings
+from scrape.core.url_guard import UnsafeUrlError, validate_public_http_url
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 
@@ -38,6 +40,20 @@ def _row_to_job_out(row: aiosqlite.Row) -> JobOut:
         created_at=row["created_at"], started_at=row["started_at"],
         finished_at=row["finished_at"],
     )
+
+
+async def _validate_job_urls(urls: list[str]) -> None:
+    allow_private = get_settings().crawler.allow_private_networks
+    sem = asyncio.Semaphore(32)
+
+    async def _check(url: str) -> None:
+        async with sem:
+            await validate_public_http_url(url, allow_private=allow_private)
+
+    try:
+        await asyncio.gather(*(_check(url) for url in sorted(set(urls))))
+    except UnsafeUrlError as e:
+        raise HTTPException(status_code=400, detail=f"unsafe URL: {e}") from e
 
 
 @router.get("", response_model=list[JobListItem])
@@ -68,6 +84,8 @@ async def create_job(
     user: UserOut = Depends(get_current_user),
     db: aiosqlite.Connection = Depends(get_db),
 ) -> JobOut:
+    urls = [str(u) for u in body.urls]
+    await _validate_job_urls(urls)
     # Quota enforcement at job creation: refuse if this batch would exceed the
     # user's remaining monthly fetch quota.
     snap = await current_usage(db, user.id)
@@ -91,7 +109,7 @@ async def create_job(
             detail=f"Plan allows {plan['concurrent_jobs']} concurrent jobs (you have {running} running).",
         )
     job_id = new_job_id()
-    urls_json = json.dumps([str(u) for u in body.urls])
+    urls_json = json.dumps(urls)
     schema_json = json.dumps(body.extraction_schema) if body.extraction_schema else None
     await db.execute(
         """INSERT INTO jobs (
@@ -108,6 +126,8 @@ async def create_job(
     job_runner.submit(job_id)
     cur = await db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
     row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=500, detail="failed to create job")
     return _row_to_job_out(row)
 
 
@@ -159,6 +179,9 @@ async def duplicate_job(
             detail=f"Plan allows {plan['concurrent_jobs']} concurrent jobs (you have {running} running).",
         )
 
+    urls = json.loads(src["urls_json"])
+    await _validate_job_urls([str(url) for url in urls])
+
     new_id = new_job_id()
     suffix_name = f"{src['name']} (rerun)"[:120]
     await db.execute(
@@ -176,6 +199,8 @@ async def duplicate_job(
     job_runner.submit(new_id)
     cur = await db.execute("SELECT * FROM jobs WHERE id = ?", (new_id,))
     row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=500, detail="failed to duplicate job")
     return _row_to_job_out(row)
 
 
@@ -208,7 +233,10 @@ async def cancel_job(
     for _ in range(20):
         await asyncio.sleep(0.05)
         cur = await db.execute("SELECT * FROM jobs WHERE id = ?", (job_id,))
-        row = await cur.fetchone()
+        next_row = await cur.fetchone()
+        if not next_row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="job not found")
+        row = next_row
         if row["status"] != "running":
             break
     return _row_to_job_out(row)

@@ -19,6 +19,7 @@ from scrape.api.schemas import UserOut
 from scrape.api.security import hash_password, verify_password
 from scrape.api.usage import concurrent_running, current_usage
 from scrape.config import get_settings
+from scrape.core.url_guard import UnsafeUrlError, validate_public_http_url
 
 router = APIRouter(prefix="/api", tags=["account"])
 
@@ -202,6 +203,8 @@ async def create_key(
     key_id, prefix, secret = await create_api_key(db, user.id, body.name, now_iso())
     cur = await db.execute("SELECT created_at FROM api_keys WHERE id = ?", (key_id,))
     row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=500, detail="failed to create API key")
     return ApiKeyCreateResponse(
         id=key_id, name=body.name, prefix=prefix, last_used_at=None,
         created_at=row["created_at"], revoked=False, secret=secret,
@@ -228,15 +231,19 @@ async def revoke_key(
 WebhookEvent = Literal["job.completed", "job.failed", "job.cancelled"]
 
 
+def _default_webhook_events() -> list[WebhookEvent]:
+    return ["job.completed"]
+
+
 class WebhookCreate(BaseModel):
     url: HttpUrl
-    events: list[WebhookEvent] = Field(default_factory=lambda: ["job.completed"])
+    events: list[WebhookEvent] = Field(default_factory=_default_webhook_events)
 
 
 class WebhookOut(BaseModel):
     id: int
     url: str
-    events: list[str]
+    events: list[WebhookEvent]
     active: bool
     secret: str
     last_status: int | None
@@ -255,15 +262,19 @@ async def list_webhooks(
         (user.id,),
     )
     rows = await cur.fetchall()
-    return [
-        WebhookOut(
-            id=r["id"], url=r["url"], events=json.loads(r["events_json"]),
+    out: list[WebhookOut] = []
+    for r in rows:
+        events = [
+            e for e in json.loads(r["events_json"])
+            if e in ("job.completed", "job.failed", "job.cancelled")
+        ]
+        out.append(WebhookOut(
+            id=r["id"], url=r["url"], events=events,
             active=bool(r["active"]), secret=r["secret"],
             last_status=r["last_status"], last_attempt_at=r["last_attempt_at"],
             created_at=r["created_at"],
-        )
-        for r in rows
-    ]
+        ))
+    return out
 
 
 @router.post("/webhooks", response_model=WebhookOut, status_code=status.HTTP_201_CREATED)
@@ -272,6 +283,14 @@ async def create_webhook(
     user: UserOut = Depends(get_current_user),
     db: aiosqlite.Connection = Depends(get_db),
 ) -> WebhookOut:
+    try:
+        await validate_public_http_url(
+            str(body.url),
+            allow_private=get_settings().crawler.allow_private_networks,
+        )
+    except UnsafeUrlError as e:
+        raise HTTPException(status_code=400, detail=f"unsafe webhook URL: {e}") from e
+
     secret = "whsec_" + secrets.token_urlsafe(24)
     cur = await db.execute(
         """INSERT INTO webhooks (user_id, url, secret, events_json, created_at)
@@ -279,9 +298,11 @@ async def create_webhook(
         (user.id, str(body.url), secret, json.dumps(body.events), now_iso()),
     )
     await db.commit()
-    wid = cur.lastrowid
+    wid = int(cur.lastrowid or 0)
     cur = await db.execute("SELECT created_at FROM webhooks WHERE id = ?", (wid,))
     row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=500, detail="failed to create webhook")
     return WebhookOut(
         id=wid, url=str(body.url), events=body.events, active=True, secret=secret,
         last_status=None, last_attempt_at=None, created_at=row["created_at"],

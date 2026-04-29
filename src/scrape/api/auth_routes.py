@@ -47,19 +47,24 @@ async def register(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="email already registered")
     # First registered user becomes admin — convenient for self-hosted single-user setups.
     cur = await db.execute("SELECT COUNT(*) as c FROM users")
-    is_first = (await cur.fetchone())["c"] == 0
+    count_row = await cur.fetchone()
+    is_first = count_row is not None and count_row["c"] == 0
     cur = await db.execute(
         "INSERT INTO users (email, password_hash, name, is_admin, created_at) VALUES (?, ?, ?, ?, ?)",
         (body.email.lower(), hash_password(body.password), body.name, 1 if is_first else 0, now_iso()),
     )
     await db.commit()
     user_id = cur.lastrowid
+    if user_id is None:
+        raise HTTPException(status_code=500, detail="failed to create user")
     token = issue_token(user_id)
     _set_cookie(response, token)
     cur = await db.execute(
         "SELECT id, email, name, is_admin, created_at FROM users WHERE id = ?", (user_id,),
     )
     row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=500, detail="failed to load user")
     return UserOut(
         id=row["id"], email=row["email"], name=row["name"],
         is_admin=bool(row["is_admin"]), created_at=row["created_at"],

@@ -24,10 +24,11 @@ from scrape.core.robots import RobotsCache
 from scrape.core.session_store import SessionStore, host_key
 from scrape.core.tier_router import TierRouter
 from scrape.core.unblock import build_unblock_provider
+from scrape.core.url_guard import UnsafeUrlError, validate_public_http_url
 from scrape.extractors.llm_schema import SchemaExtractor, build_extractor
 from scrape.extractors.selectors import find_extractor
 from scrape.logging import get_logger
-from scrape.models import ExtractedRecord, FetchRequest, FetchResult, Tier
+from scrape.models import BlockReason, ExtractedRecord, FetchRequest, FetchResult, Tier
 from scrape.pipelines.metrics import EXTRACTED_TOTAL, FETCH_LATENCY, FETCHES_TOTAL, QUEUE_SIZE
 from scrape.pipelines.storage import Storage
 
@@ -104,10 +105,29 @@ class Orchestrator:
         job_id: str | None = None,
     ) -> FetchResult | None:
         """Fetch a single URL through the tier router and persist the result."""
+        try:
+            await validate_public_http_url(
+                url,
+                allow_private=self._settings.crawler.allow_private_networks,
+            )
+        except UnsafeUrlError as e:
+            log.warning("url.blocked", url=url, reason=str(e))
+            result = FetchResult(
+                url=url,
+                final_url=url,
+                status=0,
+                body=b"",
+                elapsed_ms=0,
+                tier_used=Tier.HTTP,
+                block_reason=BlockReason.FORBIDDEN_HOST,
+            )
+            await storage.save_fetch(result, job_id=job_id)
+            return result
+
         if self._robots is not None and not await self._robots.allowed(url):
             log.info("robots.disallowed", url=url)
             return None
-        req = FetchRequest(url=url, max_tier=self._max_tier)
+        req = FetchRequest.model_validate({"url": url, "max_tier": self._max_tier})
         async with self._limiter.slot(url):
             try:
                 result = await asyncio.wait_for(
