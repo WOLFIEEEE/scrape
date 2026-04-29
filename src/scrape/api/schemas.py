@@ -25,6 +25,7 @@ class UserOut(BaseModel):
     name: str
     is_admin: bool
     created_at: datetime
+    email_verified: bool = False
 
 
 # --- Jobs ------------------------------------------------------------------

@@ -50,7 +50,7 @@ async def get_current_user(
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid token")
     cur = await db.execute(
-        "SELECT id, email, name, is_admin, created_at FROM users WHERE id = ?",
+        "SELECT id, email, name, is_admin, created_at, email_verified FROM users WHERE id = ?",
         (user_id,),
     )
     row = await cur.fetchone()
@@ -62,6 +62,7 @@ async def get_current_user(
         name=row["name"],
         is_admin=bool(row["is_admin"]),
         created_at=row["created_at"],
+        email_verified=bool(row["email_verified"]),
     )
 
 

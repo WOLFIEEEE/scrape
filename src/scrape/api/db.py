@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash TEXT NOT NULL,
     name TEXT NOT NULL DEFAULT '',
     is_admin INTEGER NOT NULL DEFAULT 0,
+    email_verified INTEGER NOT NULL DEFAULT 0,
+    verified_at TEXT,
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
@@ -76,6 +78,16 @@ CREATE TABLE IF NOT EXISTS password_resets (
 );
 CREATE INDEX IF NOT EXISTS idx_password_resets_user ON password_resets(user_id);
 
+CREATE TABLE IF NOT EXISTS email_verifications (
+    token TEXT PRIMARY KEY,           -- sha256 of the user-facing token
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    sent_to TEXT NOT NULL,            -- email address it was sent to (for audit)
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id);
+
 CREATE TABLE IF NOT EXISTS webhooks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -118,6 +130,25 @@ _MIGRATIONS = (
     ("fetches.solver_cost_usd", "ALTER TABLE fetches ADD COLUMN solver_cost_usd REAL NOT NULL DEFAULT 0"),
     # Job-level CAPTCHA hint override (Tier-2 fallback)
     ("jobs.captcha_hint", "ALTER TABLE jobs ADD COLUMN captcha_hint TEXT"),
+    # Email verification — added so existing deployments pick up the column
+    # without dropping the users table.
+    ("users.email_verified", "ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 0"),
+    ("users.verified_at", "ALTER TABLE users ADD COLUMN verified_at TEXT"),
+    (
+        "email_verifications",
+        """CREATE TABLE IF NOT EXISTS email_verifications (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            sent_to TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""",
+    ),
+    (
+        "idx_email_verifications_user",
+        "CREATE INDEX IF NOT EXISTS idx_email_verifications_user ON email_verifications(user_id)",
+    ),
 )
 
 

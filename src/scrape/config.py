@@ -52,6 +52,25 @@ class LLMConfig(BaseSettings):
     ollama_model: str = "qwen2.5:7b"
 
 
+class EmailConfig(BaseSettings):
+    """Transactional email — Resend (production) or console (dev / self-host).
+
+    Setting EMAIL_PROVIDER=resend without RESEND_API_KEY falls back to the
+    console sender with a warning rather than crashing — keeps localhost dev
+    safe when someone copies a prod compose file.
+    """
+    model_config = SettingsConfigDict(env_prefix="EMAIL_", env_file=".env", extra="ignore")
+
+    provider: Literal["auto", "resend", "console", "none"] = "auto"
+    # Address strings: include a display name (e.g. "Scrape <noreply@scrape.dev>")
+    from_address: str = Field(default="Scrape <noreply@example.com>", validation_alias="EMAIL_FROM")
+    support_address: str = Field(default="support@scrape.dev", validation_alias="EMAIL_SUPPORT")
+    brand_name: str = Field(default="Scrape", validation_alias="EMAIL_BRAND")
+
+    # Resend (only used when provider is auto+key-present, or explicitly resend)
+    resend_api_key: str = Field(default="", validation_alias="RESEND_API_KEY")
+
+
 class UnblockConfig(BaseSettings):
     """Tier-3 unblock provider — FlareSolverr (self-hosted) or commercial adapters
     (Bright Data Web Unlocker, Scrapfly)."""
@@ -117,10 +136,16 @@ class Settings(BaseSettings):
     trust_proxy_headers: bool = Field(default=False, validation_alias="SCRAPE_TRUST_PROXY_HEADERS")
     smtp_url: str = Field(default="", validation_alias="SCRAPE_SMTP_URL")
 
+    # Public origin used to build email verification + reset URLs.
+    public_url: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("SCRAPE_PUBLIC_URL", "PUBLIC_URL"),
+    )
     proxy: ProxyConfig = Field(default_factory=ProxyConfig)
     captcha: CaptchaConfig = Field(default_factory=CaptchaConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     unblock: UnblockConfig = Field(default_factory=UnblockConfig)
+    email: EmailConfig = Field(default_factory=EmailConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     redis: RedisConfig = Field(default_factory=RedisConfig)
     crawler: CrawlerConfig = Field(default_factory=CrawlerConfig)

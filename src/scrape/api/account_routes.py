@@ -98,10 +98,12 @@ async def forgot(
     db: aiosqlite.Connection = Depends(get_db),
 ) -> ForgotResponse:
     rate_check(request, "forgot")
-    cur = await db.execute("SELECT id FROM users WHERE email = ?", (body.email.lower(),))
+    cur = await db.execute(
+        "SELECT id, name FROM users WHERE email = ?", (body.email.lower(),),
+    )
     row = await cur.fetchone()
     if not row:
-        # Don't leak whether the email exists
+        # Don't leak whether the email exists. Return success silently.
         return ForgotResponse()
     token = secrets.token_urlsafe(32)
     token_hash = _hash_reset_token(token)
@@ -115,10 +117,39 @@ async def forgot(
         (token_hash, row["id"], expires),
     )
     await db.commit()
-    # In dev (no SMTP wired), surface the token so the UI can show a link.
-    # In prod you'd send an email and never return this.
+
+    # Send the reset email in the background — registration / forgot must
+    # return quickly so the UI feels responsive even if Resend is slow.
     settings = get_settings()
-    dev_token = token if settings.env != "prod" and not settings.smtp_url else None
+    reset_url = f"{settings.public_url.rstrip('/')}/reset/{token}"
+    name = (row["name"] if row["name"] is not None else "") or ""
+
+    async def _send() -> None:
+        import contextlib
+
+        from scrape.api import email as email_mod
+        from scrape.api import email_templates
+        with contextlib.suppress(Exception):  # safety net; sender already swallows
+            await email_mod.send(email_templates.password_reset_email(
+                recipient=body.email.lower(), recipient_name=name,
+                reset_url=reset_url, expires_in_minutes=_RESET_TTL_MIN,
+            ))
+
+    # Use the auth_routes background-task helper so the task isn't GC'd
+    # before its HTTP call completes (PEP 663 / RUF006).
+    from scrape.api.auth_routes import _spawn
+    _spawn(_send())
+
+    # Dev-mode helper: when the configured sender is the console one
+    # (i.e. local dev with no Resend key), surface the token in the
+    # response so the dashboard can build a clickable link without
+    # reading server logs. Prod always returns None.
+    from scrape.api import email as email_mod
+    sender_name = getattr(email_mod._sender, "name", "") if email_mod._sender else ""
+    dev_token = (
+        token if settings.env != "prod" and sender_name in ("console", "")
+        else None
+    )
     return ForgotResponse(dev_token=dev_token)
 
 

@@ -47,6 +47,7 @@ export interface User {
   name: string;
   is_admin: boolean;
   created_at: string;
+  email_verified: boolean;
 }
 
 export type JobStatus =
@@ -193,6 +194,18 @@ export const api = {
     request<void>("/api/auth/reset", {
       method: "POST",
       body: JSON.stringify({ token, new_password }),
+    }),
+
+  // email verification
+  verifyEmail: (token: string) =>
+    request<{ verified: boolean; email: string | null }>("/api/auth/verify", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+  resendVerification: (email: string) =>
+    request<{ sent: boolean }>("/api/auth/resend-verification", {
+      method: "POST",
+      body: JSON.stringify({ email }),
     }),
 
   // api keys

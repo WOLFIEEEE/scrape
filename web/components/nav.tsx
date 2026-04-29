@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Logo } from "@/components/marketing/logo";
+import { VerificationBanner } from "@/components/verification-banner";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -35,6 +36,7 @@ export function Nav() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-bg/85 backdrop-blur-xl">
+      <VerificationBanner />
       <div className="container mx-auto max-w-6xl flex items-center justify-between h-14 px-6">
         <div className="flex items-center gap-10">
           <Logo />

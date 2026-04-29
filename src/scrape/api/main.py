@@ -7,7 +7,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from scrape.api import job_runner
+from scrape.api import email as email_mod
+from scrape.api import email_templates, job_runner
 from scrape.api.account_routes import router as account_router
 from scrape.api.auth_routes import router as auth_router
 from scrape.api.db import init_db
@@ -27,6 +28,30 @@ async def lifespan(app: FastAPI):
         start_metrics_server(settings.metrics_port)
     await init_db()
     await job_runner.recover_interrupted_jobs()
+
+    # Wire the email subsystem before any route can reach it. ConsoleEmailSender
+    # is the auto-fallback when no Resend key is configured; that means local
+    # development never silently drops verification mail.
+    sender = email_mod.build_email_sender(
+        provider=settings.email.provider,
+        resend_api_key=settings.email.resend_api_key,
+    )
+    email_mod.configure(sender, default_from=settings.email.from_address)
+    email_templates.configure_brand(
+        name=settings.email.brand_name,
+        support_email=settings.email.support_address,
+    )
+    log.info(
+        "email.configured",
+        provider=sender.name,
+        from_addr=settings.email.from_address,
+    )
+    if settings.env == "prod" and sender.name == "console":
+        log.warning(
+            "email.prod_using_console",
+            hint="Set EMAIL_PROVIDER=resend + RESEND_API_KEY to send real email in production.",
+        )
+
     log.info("api.startup", db=str(settings.storage.sqlite_path))
     yield
     log.info("api.shutdown")
