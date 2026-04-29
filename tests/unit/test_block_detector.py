@@ -55,3 +55,25 @@ def test_small_json_body_is_not_blocked():
 def test_cf_mitigated_header():
     r = _result(headers={"content-type": "text/html", "cf-mitigated": "challenge"}, body=b"<html><body>" + b"a" * 1024 + b"</body></html>")
     assert detect(r) == BlockReason.CHALLENGE_PAGE
+
+
+def test_reddit_please_wait_interstitial():
+    # Real shape: 200 OK, ~8KB body, but title is the verification interstitial.
+    body = (
+        b"<!DOCTYPE html><html lang=\"en\"><head>"
+        b"<title>Reddit - Please wait for verification</title>"
+        b"</head><body>" + b"<p>x</p>" * 200 + b"</body></html>"
+    )
+    r = _result(body=body)
+    assert detect(r) == BlockReason.CHALLENGE_PAGE
+    assert needs_browser(BlockReason.CHALLENGE_PAGE)
+
+
+def test_akamai_bot_manager_interstitial():
+    body = b"<html><head><script>window._abck = '...';</script></head><body>" + b"x" * 1000 + b"</body></html>"
+    assert detect(_result(body=body)) == BlockReason.CHALLENGE_PAGE
+
+
+def test_incapsula_interstitial():
+    body = b"<html><body><iframe src='/_Incapsula_Resource?...'></iframe>" + b"x" * 1000 + b"</body></html>"
+    assert detect(_result(body=body)) == BlockReason.CHALLENGE_PAGE

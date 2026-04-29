@@ -22,6 +22,7 @@ import random
 import time
 from contextlib import asynccontextmanager
 from typing import Any
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from scrape.fingerprints.profiles import FingerprintProfile, random_profile
 from scrape.logging import get_logger
@@ -31,14 +32,35 @@ log = get_logger(__name__)
 
 # Camoufox import is deferred so the framework still works for HTTP-only users.
 try:
+    from browserforge.fingerprints import Screen  # type: ignore
     from camoufox.async_api import AsyncCamoufox  # type: ignore
     _CAMOUFOX_AVAILABLE = True
 except ImportError:  # pragma: no cover - depends on optional binary
     _CAMOUFOX_AVAILABLE = False
+    Screen = None  # type: ignore
 
 
 def camoufox_available() -> bool:
     return _CAMOUFOX_AVAILABLE
+
+
+def _split_proxy_url(url: str) -> dict[str, str]:
+    """Split a `scheme://user:pass@host:port` proxy URL into the dict shape
+    Playwright/Firefox requires (server + separate username/password).
+
+    Firefox's NSPR layer rejects userinfo embedded in the proxy URL with
+    NS_ERROR_PROXY_AUTHENTICATION_FAILED, so we have to peel it off.
+    """
+    parts = urlsplit(url)
+    server = urlunsplit((parts.scheme, parts.hostname or "", "", "", ""))
+    if parts.port:
+        server = f"{server}:{parts.port}"
+    out: dict[str, str] = {"server": server}
+    if parts.username:
+        out["username"] = unquote(parts.username)
+    if parts.password:
+        out["password"] = unquote(parts.password)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -129,14 +151,30 @@ class BrowserSession:
             )
         proxy_arg: dict[str, str] | None = None
         if self._proxy_url:
-            proxy_arg = {"server": self._proxy_url}
+            proxy_arg = _split_proxy_url(self._proxy_url)
+        # browserforge >=1.2 expects a Screen instance; passing a dict raises
+        # AttributeError deep inside fingerprint generation.
+        screen = Screen(
+            min_width=self._profile.screen_width,
+            max_width=self._profile.screen_width,
+            min_height=self._profile.screen_height,
+            max_height=self._profile.screen_height,
+        )
+        # FingerprintProfile.locale is an Accept-Language style string
+        # ("en-US", "de-DE,en-US;q=0.7"). Camoufox needs a pure BCP47 list,
+        # so strip q-weights and split on commas.
+        locale_list = [
+            tag.split(";", 1)[0].strip()
+            for tag in self._profile.locale.split(",")
+            if tag.strip()
+        ]
         self._cm = AsyncCamoufox(
             headless=self._headless,
             humanize=self._humanize,
             os=("macos" if "Mac" in self._profile.user_agent else "windows"),
-            screen={"width": self._profile.screen_width, "height": self._profile.screen_height},
+            screen=screen,
             window=(self._profile.viewport_width, self._profile.viewport_height),
-            locale=self._profile.locale,
+            locale=locale_list,
             proxy=proxy_arg,
             geoip=True,  # match exit IP geo to spoofed timezone/locale
             i_know_what_im_doing=True,

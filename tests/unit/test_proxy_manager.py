@@ -1,8 +1,11 @@
+from scrape.config import ProxyConfig
 from scrape.core.proxy_manager import (
     BrightDataProvider,
     GenericResidentialProvider,
+    IPRoyalProvider,
     NoneProvider,
     ProxyManager,
+    build_provider,
 )
 
 
@@ -16,6 +19,28 @@ def test_generic_provider_username_format():
     p = GenericResidentialProvider("proxy.example:8000", "myuser", "secret", default_country="us")
     lease = p.lease("abc")
     assert lease.url == "http://user-myuser-country-us-session-abc:secret@proxy.example:8000"
+
+
+def test_iproyal_password_qualifiers():
+    p = IPRoyalProvider(
+        "geo.iproyal.com:12321", "myuser", "secret", default_country="us", sticky_minutes=10,
+    )
+    lease = p.lease("abc")
+    # IPRoyal appends qualifiers to the password with underscores, not the username.
+    assert lease.url == (
+        "http://myuser:secret_country-us_session-abc_lifetime-10m@geo.iproyal.com:12321"
+    )
+
+
+def test_build_provider_dispatch():
+    cfg = ProxyConfig(
+        provider="iproyal", endpoint="geo.iproyal.com:12321",
+        username="u", password="p", country="us", sticky_session_minutes=5,
+    )
+    p = build_provider(cfg)
+    assert isinstance(p, IPRoyalProvider)
+    lease = p.lease("s1")
+    assert "u:p_country-us_session-s1_lifetime-5m@" in lease.url
 
 
 def test_brightdata_username_format():

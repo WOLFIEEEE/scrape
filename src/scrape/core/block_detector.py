@@ -39,6 +39,19 @@ _CAPTCHA_MARKERS = (
     re.compile(rb"recaptcha/api\.js", re.IGNORECASE),
 )
 
+# Site-specific or generic JS-challenge interstitials. These pages return 200
+# with a body that is a meta-refresh or POST self-submit form whose only
+# purpose is to fingerprint the client. Examples: Reddit's "Please wait for
+# verification", Akamai Bot Manager's pixel challenge, Imperva Incapsula's
+# rdwr fence, Kasada's KPSDK shim.
+_INTERSTITIAL_MARKERS = (
+    re.compile(rb"<title>\s*Reddit\s*-\s*Please wait for verification", re.IGNORECASE),
+    re.compile(rb"_Incapsula_Resource", re.IGNORECASE),
+    re.compile(rb"window\._abck", re.IGNORECASE),       # Akamai Bot Manager
+    re.compile(rb"bm-verify", re.IGNORECASE),           # Akamai Bot Manager
+    re.compile(rb"kpsdk-(?:cd|ct|v)", re.IGNORECASE),   # Kasada KPSDK
+)
+
 # WAF / bot-block specific server headers
 _SUSPICIOUS_HEADERS = ("server", "cf-mitigated", "x-datadome", "x-px-action")
 
@@ -76,6 +89,12 @@ def detect(result: FetchResult) -> BlockReason:
 
     if any(p.search(head) for p in _CAPTCHA_MARKERS):
         return BlockReason.CAPTCHA_REQUIRED
+
+    # JS-challenge interstitials: status is 200, body looks legitimate at a
+    # glance, but the page exists only to fingerprint the client and bounce
+    # back. Needs Tier 1 (browser) to execute the challenge.
+    if any(p.search(head) for p in _INTERSTITIAL_MARKERS):
+        return BlockReason.CHALLENGE_PAGE
 
     if status == 200 and body_len < 512:
         # 200 OK with tiny HTML body is a classic soft-block (hide content).

@@ -93,9 +93,53 @@ class BrightDataProvider(GenericResidentialProvider):
         return "-".join(parts)
 
 
+class IPRoyalProvider:
+    """IPRoyal residential gateway.
+
+    IPRoyal appends sticky/geo qualifiers to the *password* using underscores,
+    not to the username. Username stays raw.
+        user:<password>_country-us_session-<id>_lifetime-10m
+    """
+
+    name = "iproyal"
+
+    def __init__(
+        self,
+        endpoint: str,
+        username: str,
+        password: str,
+        default_country: str = "",
+        sticky_minutes: int = 10,
+    ):
+        self.endpoint = endpoint
+        self.username = username
+        self.password = password
+        self.default_country = default_country
+        self._sticky_minutes = sticky_minutes
+
+    def lease(self, session_id: str, country: str | None = None) -> ProxyLease:
+        country = country or self.default_country
+        parts = [self.password]
+        if country:
+            parts.append(f"country-{country.lower()}")
+        parts.append(f"session-{session_id}")
+        parts.append(f"lifetime-{self._sticky_minutes}m")
+        ext_password = "_".join(parts)
+        url = f"http://{self.username}:{ext_password}@{self.endpoint}"
+        return ProxyLease(url=url, session_id=session_id, provider=self.name)
+
+
 def build_provider(cfg: ProxyConfig) -> ProxyProvider:
     if cfg.provider == "none" or not cfg.endpoint:
         return NoneProvider()
+    if cfg.provider == "iproyal":
+        return IPRoyalProvider(
+            endpoint=cfg.endpoint,
+            username=cfg.username,
+            password=cfg.password,
+            default_country=cfg.country,
+            sticky_minutes=cfg.sticky_session_minutes,
+        )
     cls: type[GenericResidentialProvider] = (
         BrightDataProvider if cfg.provider == "brightdata" else GenericResidentialProvider
     )
