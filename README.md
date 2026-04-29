@@ -237,18 +237,47 @@ scrape-api
 
 ### Docker Compose
 
+The shipped `docker-compose.yaml` wires every internal service (Redis URL, Ollama URL, FlareSolverr endpoint, Next-to-API proxy, healthchecks, restart policies, log rotation) **with sensible defaults** — you do not need a `.env` file to bring the stack up.
+
 ```bash
-# Core stack only — API, web, Redis
-docker compose -f ops/compose.yml up -d
+# Core stack — API + web dashboard + Redis. Visit http://localhost:3000.
+docker compose up -d
 
-# + self-hosted Ollama (LLM extraction) and FlareSolverr (Tier-3 unblock)
-docker compose -f ops/compose.yml --profile selfhost up -d
+# + self-hosted Ollama (replaces Anthropic) and FlareSolverr (Tier-3 unblock)
+docker compose --profile selfhost up -d
 
-# + observability stack (Prometheus + Grafana)
-docker compose -f ops/compose.yml --profile observability up -d
+# + observability (Prometheus + Grafana on :9091 / :3001)
+docker compose --profile observability up -d
 ```
 
-Set `SCRAPE_JWT_SECRET` first. With `--profile selfhost`, the system runs end-to-end with **zero paid third-party services** — the API talks to in-container Ollama for LLM extraction and to FlareSolverr for Tier-3 unblocks.
+After `docker compose up -d`:
+
+| Service | URL | Notes |
+|---|---|---|
+| Web dashboard | http://localhost:3000 | Register the first user → admin |
+| FastAPI + Swagger | http://localhost:8000/docs | OpenAPI 3.1 |
+| Redis | localhost:6379 | for the rate limiter |
+| Ollama (selfhost) | http://localhost:11434 | auto-pulls `qwen2.5:7b` on first boot |
+| FlareSolverr (selfhost) | http://localhost:8191 | open-source Cloudflare bypass |
+| Grafana (observability) | http://localhost:3001 | admin / admin |
+
+**For production**: override `SCRAPE_JWT_SECRET` (the API refuses to start in `prod` mode without it), set `SCRAPE_ENV=prod`, and put the stack behind a TLS-terminating reverse proxy.
+
+```bash
+SCRAPE_ENV=prod \
+SCRAPE_JWT_SECRET="$(openssl rand -hex 64)" \
+SCRAPE_PUBLIC_URL=https://your-domain.com \
+docker compose up -d
+```
+
+**Self-hosted, zero paid services:**
+
+```bash
+LLM_BACKEND=ollama UNBLOCK_PROVIDER=flaresolverr \
+docker compose --profile selfhost up -d
+```
+
+Now LLM extraction routes to in-container Ollama and Tier-3 unblock routes to FlareSolverr. No Anthropic, no CapSolver.
 
 ### Kubernetes
 

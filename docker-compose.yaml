@@ -1,0 +1,240 @@
+# =============================================================================
+# Scrape — full self-hosted stack.
+#
+# Default profile (no flags) — production-shape stack:
+#   docker compose up -d
+#     ↳ api (FastAPI), web (Next.js dashboard), redis
+#
+# Add open-source LLM + Cloudflare bypass:
+#   docker compose --profile selfhost up -d
+#     ↳ + ollama (with auto-pulled qwen2.5:7b), flaresolverr
+#
+# Add observability:
+#   docker compose --profile observability up -d
+#     ↳ + prometheus, grafana
+#
+# All inter-container env wiring is set inline below — you do not need a .env
+# file to bring this stack up. Override SCRAPE_JWT_SECRET in production.
+# =============================================================================
+
+x-restart-policy: &restart-policy
+  restart: unless-stopped
+
+x-default-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  # ---------------------------------------------------------------------------
+  # FastAPI service (the REST API — auth, jobs, keys, webhooks, usage)
+  # ---------------------------------------------------------------------------
+  api:
+    <<: [*restart-policy, *default-logging]
+    container_name: scrape-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["scrape-api"]
+    environment:
+      # Service binding
+      SCRAPE_API_HOST: "0.0.0.0"
+      SCRAPE_API_PORT: "8000"
+      SCRAPE_ENV: "${SCRAPE_ENV:-dev}"
+      SCRAPE_JWT_SECRET: "${SCRAPE_JWT_SECRET:-dev-only-change-me-please}"
+      SCRAPE_COOKIE_SECURE: "${SCRAPE_COOKIE_SECURE:-0}"
+      SCRAPE_TRUST_PROXY_HEADERS: "${SCRAPE_TRUST_PROXY_HEADERS:-1}"
+      SCRAPE_CORS_ORIGINS: "${SCRAPE_CORS_ORIGINS:-http://localhost:3000,http://web:3000}"
+
+      # Internal service URLs — point at compose-network sidecars.
+      # These default values just work; no .env required.
+      REDIS_URL: "redis://redis:6379/0"
+      LLM_BACKEND: "${LLM_BACKEND:-none}"
+      LLM_OLLAMA_URL: "http://ollama:11434"
+      LLM_OLLAMA_MODEL: "${LLM_OLLAMA_MODEL:-qwen2.5:7b}"
+      UNBLOCK_PROVIDER: "${UNBLOCK_PROVIDER:-none}"
+      UNBLOCK_ENDPOINT: "http://flaresolverr:8191"
+      UNBLOCK_TIMEOUT_S: "${UNBLOCK_TIMEOUT_S:-60}"
+
+      # Persistent storage inside the named volume
+      STORAGE_SQLITE_PATH: "/data/scrape.db"
+      STORAGE_RAW_HTML_DIR: "/data/raw"
+
+      # Optional integrations — pass through if user sets them
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      ANTHROPIC_MODEL_FAST: "${ANTHROPIC_MODEL_FAST:-claude-haiku-4-5-20251001}"
+      ANTHROPIC_MODEL_SMART: "${ANTHROPIC_MODEL_SMART:-claude-sonnet-4-6}"
+      CAPSOLVER_API_KEY: "${CAPSOLVER_API_KEY:-}"
+
+      # Proxy provider (off by default)
+      PROXY_PROVIDER: "${PROXY_PROVIDER:-none}"
+      PROXY_ENDPOINT: "${PROXY_ENDPOINT:-}"
+      PROXY_USERNAME: "${PROXY_USERNAME:-}"
+      PROXY_PASSWORD: "${PROXY_PASSWORD:-}"
+      PROXY_COUNTRY: "${PROXY_COUNTRY:-}"
+      PROXY_STICKY_SESSION_MINUTES: "${PROXY_STICKY_SESSION_MINUTES:-10}"
+
+      # Crawler tuning — sensible defaults for a single box
+      CRAWL_MAX_CONCURRENCY: "${CRAWL_MAX_CONCURRENCY:-16}"
+      CRAWL_PER_HOST_CONCURRENCY: "${CRAWL_PER_HOST_CONCURRENCY:-2}"
+      CRAWL_PER_HOST_MIN_DELAY_MS: "${CRAWL_PER_HOST_MIN_DELAY_MS:-500}"
+      CRAWL_REQUEST_TIMEOUT_S: "${CRAWL_REQUEST_TIMEOUT_S:-30}"
+      CRAWL_RESPECT_ROBOTS: "${CRAWL_RESPECT_ROBOTS:-true}"
+
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+    volumes:
+      - scrape_data:/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    ports:
+      - "${API_PORT:-8000}:8000"
+    networks: [scrape-net]
+
+  # ---------------------------------------------------------------------------
+  # Next.js web dashboard (auth, dashboard, jobs, settings)
+  # ---------------------------------------------------------------------------
+  web:
+    <<: [*restart-policy, *default-logging]
+    container_name: scrape-web
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      # The Next server proxies /api/* to this URL — must match the api service
+      SCRAPE_API_URL: "http://api:8000"
+      SCRAPE_PUBLIC_URL: "${SCRAPE_PUBLIC_URL:-http://localhost:3000}"
+      NODE_ENV: "production"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/login', r=>process.exit(r.statusCode<500?0:1)).on('error', ()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    networks: [scrape-net]
+
+  # ---------------------------------------------------------------------------
+  # Redis — used by the per-host rate limiter and (future) distributed queue
+  # ---------------------------------------------------------------------------
+  redis:
+    <<: [*restart-policy, *default-logging]
+    image: redis:7-alpine
+    container_name: scrape-redis
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks: [scrape-net]
+
+  # ---------------------------------------------------------------------------
+  # OPTIONAL: self-hosted LLM (replaces Anthropic) — `--profile selfhost`
+  # ---------------------------------------------------------------------------
+  ollama:
+    <<: [*restart-policy, *default-logging]
+    image: ollama/ollama:latest
+    container_name: scrape-ollama
+    profiles: ["selfhost"]
+    volumes:
+      - ollama_models:/root/.ollama
+    # Auto-pull the configured model on first boot, then keep `ollama serve` running
+    entrypoint: ["/bin/sh", "-c"]
+    command: >-
+      "ollama serve &
+       PID=$$!
+       sleep 4
+       (ollama pull ${LLM_OLLAMA_MODEL:-qwen2.5:7b} || true)
+       wait $$PID"
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+    networks: [scrape-net]
+
+  # ---------------------------------------------------------------------------
+  # OPTIONAL: FlareSolverr (Tier-3 unblock) — `--profile selfhost`
+  # ---------------------------------------------------------------------------
+  flaresolverr:
+    <<: [*restart-policy, *default-logging]
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: scrape-flaresolverr
+    profiles: ["selfhost"]
+    environment:
+      LOG_LEVEL: info
+      TZ: UTC
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8191/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+    ports:
+      - "${FLARESOLVERR_PORT:-8191}:8191"
+    networks: [scrape-net]
+
+  # ---------------------------------------------------------------------------
+  # OPTIONAL: observability — `--profile observability`
+  # ---------------------------------------------------------------------------
+  prometheus:
+    <<: [*restart-policy, *default-logging]
+    image: prom/prometheus:latest
+    container_name: scrape-prometheus
+    profiles: ["observability"]
+    volumes:
+      - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=14d"
+    ports:
+      - "${PROMETHEUS_PORT:-9091}:9090"
+    networks: [scrape-net]
+
+  grafana:
+    <<: [*restart-policy, *default-logging]
+    image: grafana/grafana:latest
+    container_name: scrape-grafana
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_ADMIN_USER:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./ops/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on: [prometheus]
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    networks: [scrape-net]
+
+# =============================================================================
+volumes:
+  scrape_data: {}        # SQLite + content-addressed raw HTML
+  redis_data: {}
+  ollama_models: {}      # model weights (~5GB for qwen2.5:7b)
+  prometheus_data: {}
+  grafana_data: {}
+
+networks:
+  scrape-net:
+    driver: bridge
