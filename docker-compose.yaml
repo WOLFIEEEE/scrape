@@ -119,8 +119,8 @@ services:
       timeout: 5s
       retries: 6
       start_period: 15s
-    ports:
-      - "${API_PORT:-8000}:8000"
+    expose:
+      - "8000"
     networks: [scrape-net]
 
   # ---------------------------------------------------------------------------
@@ -146,8 +146,8 @@ services:
       timeout: 5s
       retries: 6
       start_period: 15s
-    ports:
-      - "${WEB_PORT:-3000}:3000"
+    expose:
+      - "3000"
     networks: [scrape-net]
 
   # ---------------------------------------------------------------------------
