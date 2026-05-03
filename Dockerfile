@@ -13,6 +13,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml uv.lock* ./
 RUN uv sync --frozen --no-install-project --no-dev || uv sync --no-install-project --no-dev
 
+# Hatchling needs the readme + license files to build the wheel
+# (they're declared in pyproject.toml as `readme` and `license-files`).
+COPY README.md LICENSE NOTICE ./
 COPY src ./src
 RUN uv sync --no-dev
 
