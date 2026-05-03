@@ -1,13 +1,15 @@
 """Schema-driven LLM extractor.
 
-Two backends behind one interface:
+Three backends behind one interface:
+  - OpenRouter (paid, hosted) — OpenAI-compatible gateway over hundreds of
+    models. Default backend.
   - Anthropic Claude (paid, hosted) — supports prompt caching for ~90% input
     token savings across a crawl job.
   - Ollama (free, self-hosted) — runs Qwen / Llama / NuExtract / etc. locally
     with a forced JSON output mode. Same `extract()` signature.
 
-Backend selection is config-driven via `LLM_BACKEND=anthropic|ollama`. Either
-is opt-in: if no backend is configured the orchestrator skips LLM extraction.
+Backend selection is config-driven via `LLM_BACKEND=openrouter|anthropic|ollama`.
+With `auto`, OpenRouter wins if its key is set, then Anthropic, else Ollama.
 """
 from __future__ import annotations
 
@@ -116,6 +118,112 @@ class AnthropicExtractor:
 
 
 # ----------------------------------------------------------------------------
+# OpenRouter implementation (OpenAI-compatible gateway)
+# ----------------------------------------------------------------------------
+
+class OpenRouterExtractor:
+    """Talks to OpenRouter's OpenAI-compatible chat-completions endpoint.
+
+    Forces JSON output via `response_format={"type": "json_object"}`. Most
+    OpenRouter-hosted models (OpenAI, Anthropic, Google, Mistral, …) honor it;
+    those that don't will still emit JSON-shaped output most of the time and
+    we fall back to lenient parsing.
+    """
+
+    backend = "openrouter"
+
+    def __init__(
+        self,
+        api_key: str | None = None,
+        model: str | None = None,
+        base_url: str | None = None,
+        timeout_s: int = 120,
+    ):
+        cfg = get_settings()
+        key = api_key or cfg.llm.openrouter_api_key
+        if not key:
+            raise RuntimeError(
+                "OpenRouter API key not configured (OPENROUTER_API_KEY). "
+                "Set LLM_BACKEND=ollama for self-hosted extraction."
+            )
+        self._api_key = key
+        self._model = model or cfg.llm.openrouter_model
+        self._base = (base_url or cfg.llm.openrouter_base_url).rstrip("/")
+        self._referer = cfg.llm.openrouter_referer
+        self._title = cfg.llm.openrouter_app_title
+        self._timeout = timeout_s
+
+    async def extract(
+        self,
+        html: str | bytes,
+        url: str,
+        schema_name: str,
+        schema: dict[str, Any],
+    ) -> ExtractedRecord:
+        markdown = html_to_markdown(html, base_url=url)
+        if len(markdown) > 60_000:
+            markdown = markdown[:60_000]
+
+        user_prompt = (
+            f"URL: {url}\n"
+            f"Schema name: {schema_name}\n"
+            f"JSON Schema:\n{json.dumps(schema, indent=2)}\n\n"
+            f"Page (Markdown):\n{markdown}\n\n"
+            "Return ONLY the JSON object, no prose, no fences."
+        )
+
+        payload = {
+            "model": self._model,
+            "temperature": 0.1,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+        }
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        if self._referer:
+            headers["HTTP-Referer"] = self._referer
+        if self._title:
+            headers["X-Title"] = self._title
+
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                resp = await client.post(
+                    f"{self._base}/chat/completions",
+                    json=payload,
+                    headers=headers,
+                )
+                resp.raise_for_status()
+                body = resp.json()
+        except httpx.HTTPError as e:
+            log.warning("openrouter.http_error", url=url, error=str(e))
+            return ExtractedRecord(
+                url=url, schema_name=schema_name,
+                data={"_error": f"openrouter: {e}"}, confidence=0.0,
+            )
+
+        choices = body.get("choices") or []
+        text = ""
+        if choices:
+            text = ((choices[0].get("message") or {}).get("content") or "").strip()
+        data = _parse_json_blob(text, url)
+
+        # Required-field-completeness as confidence proxy (matches Ollama path).
+        required = (schema or {}).get("required") or []
+        if required and isinstance(data, dict):
+            present = sum(1 for k in required if data.get(k) is not None)
+            confidence = round(present / max(len(required), 1), 3)
+        else:
+            confidence = 0.7
+
+        return ExtractedRecord(url=url, schema_name=schema_name, data=data, confidence=confidence)
+
+
+# ----------------------------------------------------------------------------
 # Ollama implementation (self-hosted)
 # ----------------------------------------------------------------------------
 
@@ -201,6 +309,11 @@ def build_extractor() -> SchemaExtractor | None:
     cfg = get_settings()
     backend = cfg.llm.backend.lower()
 
+    if backend == "openrouter":
+        if not cfg.llm.openrouter_api_key:
+            log.warning("llm.skipped", reason="openrouter_key_missing")
+            return None
+        return OpenRouterExtractor()
     if backend == "ollama":
         return OllamaExtractor()
     if backend == "anthropic":
@@ -209,9 +322,10 @@ def build_extractor() -> SchemaExtractor | None:
             return None
         return AnthropicExtractor()
     if backend == "auto":
+        if cfg.llm.openrouter_api_key:
+            return OpenRouterExtractor()
         if cfg.llm.api_key:
             return AnthropicExtractor()
-        # Fall through to Ollama only if it's reachable
         return OllamaExtractor()
     return None
 

@@ -48,12 +48,13 @@ services:
       SCRAPE_COOKIE_SECURE: "${SCRAPE_COOKIE_SECURE:-1}"
       SCRAPE_TRUST_PROXY_HEADERS: "${SCRAPE_TRUST_PROXY_HEADERS:-1}"
       SCRAPE_CORS_ORIGINS: "${SCRAPE_CORS_ORIGINS:-http://localhost:3000,http://web:3000}"
+      SCRAPE_PUBLIC_URL: "${SCRAPE_PUBLIC_URL:-http://localhost:3000}"
       SCRAPE_METRICS_PORT: "${SCRAPE_METRICS_PORT:-9090}"
 
       # Internal service URLs — point at compose-network sidecars.
       # These default values just work; no .env required.
       REDIS_URL: "redis://redis:6379/0"
-      LLM_BACKEND: "${LLM_BACKEND:-none}"
+      LLM_BACKEND: "${LLM_BACKEND:-openrouter}"
       LLM_OLLAMA_URL: "http://ollama:11434"
       LLM_OLLAMA_MODEL: "${LLM_OLLAMA_MODEL:-qwen2.5:7b}"
       UNBLOCK_PROVIDER: "${UNBLOCK_PROVIDER:-none}"
@@ -64,11 +65,31 @@ services:
       STORAGE_SQLITE_PATH: "/data/scrape.db"
       STORAGE_RAW_HTML_DIR: "/data/raw"
 
-      # Optional integrations — pass through if user sets them
+      # OpenRouter (default LLM backend)
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_MODEL: "${OPENROUTER_MODEL:-anthropic/claude-haiku-4.5}"
+      OPENROUTER_BASE_URL: "${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}"
+      OPENROUTER_REFERER: "${OPENROUTER_REFERER:-}"
+      OPENROUTER_APP_TITLE: "${OPENROUTER_APP_TITLE:-Scrape}"
+
+      # Anthropic (alternate LLM backend) — pass through if user sets ANTHROPIC_API_KEY
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
       ANTHROPIC_MODEL_FAST: "${ANTHROPIC_MODEL_FAST:-claude-haiku-4-5-20251001}"
       ANTHROPIC_MODEL_SMART: "${ANTHROPIC_MODEL_SMART:-claude-sonnet-4-6}"
+
+      # Transactional email (verify / password reset). Without RESEND_API_KEY,
+      # provider=auto falls back to console (logs to stdout).
+      EMAIL_PROVIDER: "${EMAIL_PROVIDER:-auto}"
+      EMAIL_FROM: "${EMAIL_FROM:-Scrape <noreply@example.com>}"
+      EMAIL_SUPPORT: "${EMAIL_SUPPORT:-support@example.com}"
+      EMAIL_BRAND: "${EMAIL_BRAND:-Scrape}"
+      RESEND_API_KEY: "${RESEND_API_KEY:-}"
+
+      # CAPTCHA solver (Tier 2) + commercial unblock providers (Tier 3)
       CAPSOLVER_API_KEY: "${CAPSOLVER_API_KEY:-}"
+      BRIGHTDATA_API_KEY: "${BRIGHTDATA_API_KEY:-}"
+      BRIGHTDATA_ZONE: "${BRIGHTDATA_ZONE:-web_unlocker1}"
+      SCRAPFLY_API_KEY: "${SCRAPFLY_API_KEY:-}"
 
       # Proxy provider (off by default)
       PROXY_PROVIDER: "${PROXY_PROVIDER:-none}"

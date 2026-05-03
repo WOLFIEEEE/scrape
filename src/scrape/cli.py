@@ -45,7 +45,7 @@ def crawl(
     schema: Annotated[str | None, typer.Option(help="Path to a YAML/JSON schema for LLM extraction")] = None,
     schema_name: Annotated[str, typer.Option(help="Logical name for the extraction schema")] = "default",
     no_browser: Annotated[bool, typer.Option("--no-browser", help="Disable browser tier even if available")] = False,
-    use_llm: Annotated[bool, typer.Option("--llm", help="Enable LLM extraction (requires ANTHROPIC_API_KEY)")] = False,
+    use_llm: Annotated[bool, typer.Option("--llm", help="Enable LLM extraction (default backend: OpenRouter, requires OPENROUTER_API_KEY)")] = False,
     metrics_port: Annotated[int, typer.Option(help="Prometheus metrics port (0 = disabled)")] = 0,
 ) -> None:
     """Crawl one or more URLs through the escalation pipeline."""

@@ -30,19 +30,34 @@ class CaptchaConfig(BaseSettings):
 
 
 class LLMConfig(BaseSettings):
-    """Schema-extraction LLM config — supports Anthropic Claude or self-hosted Ollama.
+    """Schema-extraction LLM config — OpenRouter (default), Anthropic, or Ollama.
 
     Backend selection:
-      LLM_BACKEND=anthropic   → use Claude (requires ANTHROPIC_API_KEY)
+      LLM_BACKEND=openrouter (default) → OpenRouter (requires OPENROUTER_API_KEY)
+      LLM_BACKEND=anthropic   → use Claude direct (requires ANTHROPIC_API_KEY)
       LLM_BACKEND=ollama      → use a local Ollama server
-      LLM_BACKEND=auto        → Anthropic if key set, else Ollama
-      LLM_BACKEND=none (default) → LLM extraction disabled
+      LLM_BACKEND=auto        → OpenRouter if key set, else Anthropic, else Ollama
+      LLM_BACKEND=none        → LLM extraction disabled
     """
     model_config = SettingsConfigDict(env_prefix="LLM_", env_file=".env", extra="ignore")
 
-    backend: Literal["none", "anthropic", "ollama", "auto"] = "none"
+    backend: Literal["none", "openrouter", "anthropic", "ollama", "auto"] = "openrouter"
 
-    # --- Anthropic ---
+    # --- OpenRouter (default) ---
+    openrouter_api_key: str = Field(default="", validation_alias="OPENROUTER_API_KEY")
+    openrouter_model: str = Field(
+        default="anthropic/claude-haiku-4.5",
+        validation_alias="OPENROUTER_MODEL",
+    )
+    openrouter_base_url: str = Field(
+        default="https://openrouter.ai/api/v1",
+        validation_alias="OPENROUTER_BASE_URL",
+    )
+    # Optional attribution headers — OpenRouter shows these on its dashboard.
+    openrouter_referer: str = Field(default="", validation_alias="OPENROUTER_REFERER")
+    openrouter_app_title: str = Field(default="Scrape", validation_alias="OPENROUTER_APP_TITLE")
+
+    # --- Anthropic (direct) ---
     api_key: str = Field(default="", validation_alias="ANTHROPIC_API_KEY")
     model_fast: str = Field(default="claude-haiku-4-5-20251001", validation_alias="ANTHROPIC_MODEL_FAST")
     model_smart: str = Field(default="claude-sonnet-4-6", validation_alias="ANTHROPIC_MODEL_SMART")
